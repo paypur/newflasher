@@ -17,3 +17,8 @@
 /newflasher-*.txz
 /expat-2.2.9/
 /include
+
+/rust/target/
+.idea/
+
+perf.*

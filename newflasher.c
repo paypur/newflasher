@@ -547,7 +547,7 @@ static int get_vidpid(int fd, unsigned short VID, unsigned short PID)
 	return 1;
 }
 
-struct usb_handle *get_flashmode(unsigned short VID, unsigned short PID)
+struct usb_handle *get_flash_mode(unsigned short VID, unsigned short PID)
 {
 	char busname[64], devname[64];
 	DIR *busdir, *devdir;
@@ -3015,7 +3015,7 @@ int main(int argc, char *argv[])
 	printf("\n");
 
 #else
-	dev = get_flashmode(VID, PID);
+	dev = get_flash_mode(VID, PID);
 
 	if (dev == NULL) {
 		printf("\nNo usb device with vid:0x%04x pid:0x%04x !\n", VID, PID);
