@@ -516,6 +516,7 @@ struct usb_handle
 	int desc;
 	unsigned char ep_in;
 	unsigned char ep_out;
+	char _context[16];
 };
 
 typedef struct usb_handle *HANDLE;
@@ -547,8 +548,8 @@ static int get_vidpid(int fd, unsigned short VID, unsigned short PID)
 	return 1;
 }
 
-struct usb_handle *get_flash_mode(unsigned short VID, unsigned short PID)
-{
+struct usb_handle *get_flash_mode(unsigned short VID, unsigned short PID);
+/*{
 	char busname[64], devname[64];
 	DIR *busdir, *devdir;
 	struct dirent *de;
@@ -566,14 +567,14 @@ struct usb_handle *get_flash_mode(unsigned short VID, unsigned short PID)
 		return usb;
 	}
 
-	/*printf("busdir: %p\n", busdir);*/
+	/*printf("busdir: %p\n", busdir);#1#
 
 	while ((de = readdir(busdir)) && (found_usb == 0)) {
-		/*printf("dirent: %p\n", de);*/
+		/*printf("dirent: %p\n", de);#1#
 		if (badname(de->d_name))
 			continue;
 		snprintf(busname, sizeof(busname), "%s/%s", "/dev/bus/usb", de->d_name);
-		/*printf("busname: %s\n", busname);*/
+		/*printf("busname: %s\n", busname);#1#
 
 		devdir = opendir(busname);
 
@@ -581,7 +582,7 @@ struct usb_handle *get_flash_mode(unsigned short VID, unsigned short PID)
 			if (badname(de->d_name))
 				continue;
 			snprintf(devname, sizeof(devname), "%s/%s", busname, de->d_name);
-			/*printf("devname: %s\n", devname);*/
+			/*printf("devname: %s\n", devname);#1#
 
 			if ((fd = open(devname, O_RDWR)) < 1) {
 				printf("cannot open %s for writing\n", devname);
@@ -612,7 +613,7 @@ struct usb_handle *get_flash_mode(unsigned short VID, unsigned short PID)
 	}
 	closedir(busdir);
 	return usb;
-}
+}*/
 
 int usb_close(struct usb_handle *h)
 {
