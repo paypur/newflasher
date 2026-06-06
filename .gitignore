@@ -8,6 +8,7 @@
 /newflasher.res
 /newflasher.x64
 /newflasher.arm64_pie
+/newflasher.o
 /dump.bin
 /.DS_Store
 /obj

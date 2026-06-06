@@ -27,6 +27,12 @@ LIBS+=-lusb-1.0
 endif
 CROSS_CFLAGS=${CFLAGS} -I include -I zlib-1.3.1 -L zlib-1.3.1 -I expat-2.2.9/lib -L expat-2.2.9/lib/.libs
 
+CARGO_FLAGS = --release
+RUST_DIR = rust
+RUST_LIB_NAME = nfrs
+RUST_OUT_DIR = $(RUST_DIR)/target/release
+STATIC_LIB = $(RUST_OUT_DIR)/lib$(RUST_LIB_NAME).a
+
 .PHONY: default
 default: newflasher
 
@@ -43,8 +49,14 @@ libs:
 	@test -d expat-2.2.9 && echo "" || tar xzf expat-2.2.9.tar.gz
 	@rm -rf expat-2.2.9.tar.gz
 
-newflasher: newflasher.c version.h
-	${CC} ${CFLAGS} $< -o $@ -lz -lexpat ${LIBS}
+newflasher: newflasher.o version.h $(STATIC_LIB)
+	${CC} ${CFLAGS} $^ -o $@ -lz -lexpat ${LIBS}
+
+newflasher.o: newflasher.c
+	${CC} ${CFLAGS} -c $< -o newflasher.o
+
+$(STATIC_LIB): $(shell find $(RUST_DIR)/src -type f 2>/dev/null) $(RUST_DIR)/Cargo.toml
+	cd $(RUST_DIR) && cargo build $(CARGO_FLAGS)
 
 newflasher.exe: libs newflasher.c version.h
 	@cd zlib-1.3.1 && CC=${CCWIN} ./configure --static && make clean && make
@@ -104,6 +116,7 @@ install: newflasher newflasher.1.gz
 .PHONY: clean
 clean:
 	rm -rf *.gz *.o *.rc *.res obj libs zlib expat zlib-1.3.1 expat-2.2.9 include
+	cd $(RUST_DIR) && cargo clean
 
 .PHONY: distclean
 distclean:

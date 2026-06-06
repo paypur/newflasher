@@ -13,6 +13,7 @@ pub struct UsbHandle {
     _context: Stuff
 }
 
+#[repr(C)]
 struct Stuff {
     device: Device,
     interface: Interface
@@ -23,12 +24,12 @@ unsafe extern "C" {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn get_flash_mode(vid: c_ushort, pid: c_ushort) -> *const c_void {
+pub extern "C" fn get_flash_mode(vid: c_ushort, pid: c_ushort) -> *mut UsbHandle {
     let di = nusb::list_devices()
         .wait()
         .unwrap()
         .find(|d| d.vendor_id() == vid && d.product_id() == pid)
-        .expect("Device should be connected ");
+        .expect("Failed to find device at /dev/bus/usb! Device should be connected via flash mode (green *)");
 
     let device: Device = di.open().wait().expect(format!("Failed to open device (VID: {:?}, PID: {:?})", vid, pid).as_str());
     let interface: Interface = device.claim_interface(0).wait().unwrap();
@@ -45,7 +46,7 @@ pub extern "C" fn get_flash_mode(vid: c_ushort, pid: c_ushort) -> *const c_void 
     // technically a memory leak, but we only call this once
     let context = Box::new(UsbHandle { fname: [0; 64], file_desc: raw_fd, ep_in: ep_in.endpoint_address(), ep_out: ep_out.endpoint_address(), _context: Stuff {device, interface} });
 
-    Box::into_raw(context) as *mut c_void
+    Box::into_raw(context)
 }
 
 
