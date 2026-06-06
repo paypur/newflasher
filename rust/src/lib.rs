@@ -1,8 +1,16 @@
-use nusb::{Device, Endpoint, Interface, MaybeFuture};
-use std::ffi::{c_char, c_int, c_uchar, c_ushort, c_void};
-use nusb::transfer::{Bulk, In, Out};
+use nusb::transfer::{Bulk, Direction, In, Out};
+use nusb::{Device, Interface, MaybeFuture};
+use std::ffi::{c_char, c_int, c_uchar, c_ulong, c_ushort};
+use std::io::{Read, Write};
 
 use std::os::fd::RawFd;
+use std::slice;
+use std::time::Duration;
+use nusb::io::{EndpointRead, EndpointWrite};
+
+const IN: u8 = 0x81;
+const OUT: u8 = 0x01;
+const TWO_MIN: Duration = Duration::from_mins(2);
 
 #[repr(C)]
 pub struct UsbHandle {
@@ -16,7 +24,9 @@ pub struct UsbHandle {
 #[repr(C)]
 struct Stuff {
     device: Device,
-    interface: Interface
+    interface: Interface,
+    reader: EndpointRead<Bulk>,
+    writer: EndpointWrite<Bulk>
 }
 
 // C globals and functions
@@ -36,42 +46,43 @@ pub extern "C" fn get_flash_mode(vid: c_ushort, pid: c_ushort) -> *mut UsbHandle
 
     let raw_fd = unsafe { *(&device as *const Device as *const RawFd) };
 
-    // TODO: only for flash mode
-    let o = 0x01;
-    let i = 0x81;
-
-    let ep_in: Endpoint<Bulk, In> = interface.endpoint::<Bulk, In>(i).unwrap();
-    let ep_out: Endpoint<Bulk, Out> = interface.endpoint::<Bulk, Out>(o).unwrap();
+    let reader = interface.endpoint::<Bulk, In>(IN).unwrap().reader(1024).with_num_transfers(2).with_read_timeout(TWO_MIN);
+    let writer = interface.endpoint::<Bulk, Out>(OUT).unwrap().writer(1024).with_num_transfers(2).with_write_timeout(TWO_MIN);
 
     // technically a memory leak, but we only call this once
-    let context = Box::new(UsbHandle { fname: [0; 64], file_desc: raw_fd, ep_in: ep_in.endpoint_address(), ep_out: ep_out.endpoint_address(), _context: Stuff {device, interface} });
+    let handle = Box::new(UsbHandle { fname: [0; 64], file_desc: raw_fd, ep_in: IN, ep_out: OUT,
+        _context: Stuff {device, interface, reader, writer}
+    });
 
-    Box::into_raw(context)
+    Box::into_raw(handle)
 }
 
 
-// #[unsafe(no_mangle)]
-// pub extern "C" fn transfer_bulk_ffi(handle: *const libusb_device_handle, ep: c_int, bytes: *const c_char, size: c_ulong, timeout: c_int, exact: c_int) -> u64 {
-//     let nn_handle = NonNull::from(handle);
-//     DeviceHandle::from_libusb(nn_handle)
-// }
-//
-// fn transfer_bulk<T: UsbContext>(
-//     device: &mut Device<T>,
-//     direction: Direction,
-//     buf: &mut [u8],
-//     timeout: Duration,
-// ) -> Result<usize, rusb::Error> {
-//     let ep_address = match direction {
-//         Direction::In => 0x81,
-//         Direction::Out => 0x01,
-//     };
-//
-//     let handle = device.open()?;
-//
-//     if direction == Direction::In {
-//         handle.read_bulk(ep_address, buf, timeout)
-//     } else {
-//         handle.write_bulk(ep_address, buf, timeout)
-//     }
-// }
+#[unsafe(no_mangle)]
+pub extern "C" fn transfer_bulk_ffi(unsafe_handle: *mut UsbHandle, ep: c_int, chars: *mut c_char, size: c_ulong, _timeout: c_int, _exact: c_int) -> u64 {
+    let handle = unsafe { &mut *unsafe_handle };
+    let direction = match ep {
+        0 => Direction::In,
+        1 => Direction::Out,
+        _ => return 0
+    };
+    let slice = unsafe { slice::from_raw_parts_mut(chars as *mut u8, size as usize) };
+
+    match transfer_bulk(&mut handle._context, direction, slice, Duration::default()) {
+        Ok(_) => size,
+        Err(_) => 0
+    }
+}
+
+fn transfer_bulk(
+    stuff: &mut Stuff,
+    direction: Direction,
+    buffer: &mut [u8],
+    _timeout: Duration,
+) -> std::io::Result<()> {
+    if direction == Direction::In {
+         stuff.reader.read_exact(buffer)
+    } else {
+        stuff.writer.write_all(buffer)
+    }
+}

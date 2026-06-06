@@ -516,7 +516,7 @@ struct usb_handle
 	int desc;
 	unsigned char ep_in;
 	unsigned char ep_out;
-	char _context[16];
+	char _context[8 + 8 + 128 + 112];
 };
 
 typedef struct usb_handle *HANDLE;
