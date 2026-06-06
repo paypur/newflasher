@@ -1,3 +1,5 @@
+mod tests;
+
 use nusb::transfer::{Bulk, Direction, In, Out};
 use nusb::{Device, Interface, MaybeFuture};
 use std::ffi::{c_char, c_int, c_uchar, c_ulong, c_ushort};

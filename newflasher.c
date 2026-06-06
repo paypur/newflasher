@@ -361,7 +361,7 @@ static ssize_t g_getline(char **lineptr, size_t *n, FILE *stream) {
 	return (ssize_t)(cur_pos - *lineptr);
 }
 
-static void trim(char *ptr) {
+void trim(char *ptr) {
 	int i = 0;
 	int j = 0;
 
@@ -701,7 +701,7 @@ static char *open_dev(unsigned short VID, unsigned short PID)
 	return devicePath;
 }
 
-static unsigned long transfer_bulk_async(HANDLE dev, int ep, char *bytes, unsigned long size, int timeout, int exact)
+/*static unsigned long transfer_bulk_async(HANDLE dev, int ep, char *bytes, unsigned long size, int timeout, int exact)
 {
 	static unsigned long nBytesRead = 0;
 	BOOL bResult;
@@ -742,17 +742,17 @@ static unsigned long transfer_bulk_async(HANDLE dev, int ep, char *bytes, unsign
 				{
 					case ERROR_HANDLE_EOF:
 					{
-						/* we have reached the end of the file during the call to ReadFile */
+						/* we have reached the end of the file during the call to ReadFile #1#
 						DisplayError(TEXT("HANDLE_EOF:"));
 						break;
 					}
 					case ERROR_IO_PENDING:
 					{
-						/* asynchronous i/o is still in progress */
+						/* asynchronous i/o is still in progress #1#
 						switch(WaitForSingleObject(gOverLapped_in.hEvent, timeout))
 						{
 							case WAIT_OBJECT_0:
-								/* check on the results of the asynchronous read and update the nBytesRead... */
+								/* check on the results of the asynchronous read and update the nBytesRead... #1#
 								do
 								{
 									// https://docs.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-getoverlappedresult
@@ -827,17 +827,17 @@ static unsigned long transfer_bulk_async(HANDLE dev, int ep, char *bytes, unsign
 				{
 					case ERROR_HANDLE_EOF:
 					{
-						/* we have reached the end of the file during the call to ReadFile */
+						/* we have reached the end of the file during the call to ReadFile #1#
 						DisplayError(TEXT("HANDLE_EOF:"));
 						break;
 					}
 					case ERROR_IO_PENDING:
 					{
-						/* asynchronous i/o is still in progress */
+						/* asynchronous i/o is still in progress #1#
 						switch(WaitForSingleObject(gOverLapped_out.hEvent, timeout))
 						{
 							case WAIT_OBJECT_0:
-								/* check on the results of the asynchronous read and update the nBytesRead... */
+								/* check on the results of the asynchronous read and update the nBytesRead... #1#
 								do
 								{
 									// https://docs.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-getoverlappedresult
@@ -913,7 +913,7 @@ static unsigned long transfer_bulk_async(HANDLE dev, int ep, char *bytes, unsign
 	}
 #endif
 	return nBytesRead;
-}
+}*/
 #else
 #ifdef __APPLE__
 
@@ -1473,7 +1473,7 @@ static int gunziper(char *in, char *out)
 }
 
 /* Parse an octal number, ignoring leading and trailing nonsense. */
-static int parseoct(const char *p, size_t n)
+int parseoct(const char *p, size_t n)
 {
 	int i = 0;
 
@@ -1491,7 +1491,7 @@ static int parseoct(const char *p, size_t n)
 }
 
 /* Returns true if this is 512 zero bytes. */
-static int is_end_of_archive(const char *p)
+int is_end_of_archive(const char *p)
 {
 	int n;
 	for (n = 511; n >= 0; --n)
