@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod tests {
     use std::ffi::{c_char, CStr};
-    use arrayvec::ArrayVec;
     use crate::*;
 
     unsafe extern "C" {
@@ -15,28 +14,37 @@ mod tests {
     const PID: u16 = 0xB00B;
 
     #[test]
-    fn test_() {
-        let mut message = [0u8; 4096];
-        let mut reply = ArrayVec::<u8, 4096>::new();
-
+    fn test_fastboot_vars() {
+        let mut vec = Vec::<u8>::new();
         let mut usb = get_flash_mode_rs(VID, PID);
 
-        let str = b"getvar:max-download-size";
-        message[..str.len()].clone_from_slice(str);
+        // let max_download_size = str::from_utf8(&reply).expect(&format!("Failed to parse {:?} as str", reply.as_slice()))
+        //                                     .parse::<i32>().expect(&format!("Failed to parse {:?} as i32", str));
 
-        assert!(transfer_bulk_rs(&mut usb, Direction::Out, &mut message.as_mut()[..str.len()], true).is_ok());
-        assert!(get_reply_rs(&mut usb, &mut reply, false));
-        assert!(&reply[..4].ne(b"FAIL"));
-
-        if reply.last().is_some_and(|b| *b == 0) {
-            // remove null terminator
-            reply.truncate(reply.len() - 1);
-        }
-
-        let max_download_size = str::from_utf8(&reply).expect(&format!("Failed to parse {:?} as str", reply.as_slice()))
-                                            .parse::<i32>().expect(&format!("Failed to parse {:?} as i32", str));
-
-        assert_eq!(max_download_size, 805_306_368);
+        // $ fastboot getvar all
+        assert!(check_reply(&mut vec, &mut usb, b"getvar:max-download-size", "805306368"));
+        assert!(check_reply(&mut vec, &mut usb, b"getvar:product", "XQ-EC72"));
+        assert!(check_reply(&mut vec, &mut usb, b"getvar:version", "0.4"));
+        assert!(check_reply(&mut vec, &mut usb, b"getvar:version-bootloader", "8650-0001_X_Boot_SM8650_LA1.0_U_36"));
+        // test_var_string(message, &mut reply, &mut usb, b"getvar:serialno", "");
+        assert!(check_reply(&mut vec, &mut usb, b"getvar:secure", "no"));
+        assert!(check_reply(&mut vec, &mut usb, b"getvar:Sector-size", "4096"));
+        assert!(check_reply(&mut vec, &mut usb, b"getvar:Loader-version", "8650-0001_X_Boot_SM8650_LA1.0_U_36"));
+        // test_var_string(message, &mut reply, &mut usb, b"getvar:Phone-id", "");
+        // test_var_string(message, &mut reply, &mut usb, b"getvar:Device-id", "");
+        assert!(check_reply(&mut vec, &mut usb, b"getvar:Platform-id", "202270E1"));
+        assert!(check_reply(&mut vec, &mut usb, b"getvar:Rooting-status", "ROOTED"));
+        assert!(check_reply(&mut vec, &mut usb, b"getvar:Ufs-info", "KIOXIA,THGJFLT1E45BATPB,0100"));
+        assert!(check_reply(&mut vec, &mut usb, b"getvar:Emmc-info", "Emmc-info not supported"));
+        assert!(check_reply(&mut vec, &mut usb, b"getvar:Default-security", "ON"));
+        assert!(check_reply(&mut vec, &mut usb, b"getvar:Keystore-counter", "2"));
+        assert!(check_reply(&mut vec, &mut usb, b"getvar:Security-state", ""));
+        assert!(check_reply(&mut vec, &mut usb, b"getvar:S1-root", "S1_Root_398d"));
+        assert!(check_reply(&mut vec, &mut usb, b"getvar:Sake-root", "5515"));
+        assert!(check_reply(&mut vec, &mut usb, b"getvar:Get-root-key-hash", "Get-root-key-hash not supported"));
+        assert!(check_reply(&mut vec, &mut usb, b"getvar:slot-count", "2"));
+        assert!(check_reply(&mut vec, &mut usb, b"getvar:current-slot", "a"));
+        assert!(check_reply(&mut vec, &mut usb, b"getvar:Battery", "Battery not supported"));
     }
 
     #[test]
