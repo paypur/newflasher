@@ -1,16 +1,50 @@
-use std::ffi::c_char;
-
-// #[link(name = "newflasher_c", kind = "static")]
-unsafe extern "C" {
-    pub fn trim(ptr: *mut c_char);
-    pub fn parseoct(p: *const c_char, n: usize) -> i32;
-    pub fn is_end_of_archive(p: *const u8) -> i32;
-}
-
 #[cfg(test)]
 mod tests {
     use std::ffi::{c_char, CStr};
-    use super::*;
+    use arrayvec::ArrayVec;
+    use crate::*;
+
+    unsafe extern "C" {
+        pub fn trim(ptr: *mut c_char);
+
+        pub fn parseoct(p: *const c_char, n: usize) -> i32;
+        pub fn is_end_of_archive(p: *const u8) -> i32;
+    }
+
+    const VID: u16 = 0x0FCE;
+    const PID: u16 = 0xB00B;
+
+    #[test]
+    fn test_() {
+        let mut message = [0u8; 4096];
+        let mut reply = ArrayVec::<u8, 4096>::new();
+
+        let mut usb = get_flash_mode_rs(VID, PID);
+
+        let str = b"getvar:max-download-size";
+        message[..str.len()].clone_from_slice(str);
+
+        assert!(transfer_bulk_rs(&mut usb, Direction::Out, &mut message.as_mut()[..str.len()], true).is_ok());
+        assert!(get_reply_rs(&mut usb, &mut reply, false));
+        assert!(&reply[..4].ne(b"FAIL"));
+
+        if reply.last().is_some_and(|b| *b == 0) {
+            // remove null terminator
+            reply.truncate(reply.len() - 1);
+        }
+
+        let max_download_size = str::from_utf8(&reply).expect(&format!("Failed to parse {:?} as str", reply.as_slice()))
+                                            .parse::<i32>().expect(&format!("Failed to parse {:?} as i32", str));
+
+        assert_eq!(max_download_size, 805_306_368);
+    }
+
+    #[test]
+    fn test_files() {
+        let text = c"files/text".as_ptr();
+        assert_eq!(file_exist(text), 1);
+        assert_eq!(file_size(text), 26);
+    }
 
     #[test]
     fn test_trim() {
@@ -24,6 +58,15 @@ mod tests {
             assert_eq!(CStr::from_ptr(str1.as_ptr() as *const c_char), c"whywouldyoutypelikethis");
         }
     }
+
+    // #[test]
+    // fn test_display_buffer_hex_ascii() {
+    //     unsafe {
+    //         let m = c"message".as_ptr();
+    //         let b = c"buffer".as_ptr();
+    //         display_buffer_hex_ascii(m, b, 6);
+    //     }
+    // }
 
     #[test]
     fn test_parseoct() {

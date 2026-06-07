@@ -244,7 +244,7 @@ void fread_unus_res(void *ptr, size_t size, size_t nmemb, FILE *stream) {
 	}
 }
 
-unsigned int file_size(char *filename) {
+unsigned int file_size(char *filename);/* {
 	unsigned int size;
 
 	FILE *fp = fopen(filename, "rb");
@@ -258,9 +258,9 @@ unsigned int file_size(char *filename) {
 	fseek(fp, 0, SEEK_SET);
 	fclose(fp);
 	return size;
-}
+}*/
 
-static int file_exist(char *file) {
+static int file_exist(char *file);/* {
 	int ret;
 	FILE *f = NULL;
 
@@ -271,7 +271,7 @@ static int file_exist(char *file) {
 		ret = 1;
 	}
 	return ret;
-}
+}*/
 
 static void remove_file_exist(char *file) {
 	if (file_exist(file)) {
@@ -457,7 +457,7 @@ static void to_uppercase(char *ptr) {
 	for ( ; *ptr; ++ptr) *ptr = toupper(*ptr);
 }
 
-static void display_buffer_hex_ascii(char *message, char *buffer, unsigned int size) {
+void display_buffer_hex_ascii(char *message, char *buffer, unsigned int size) {
 	unsigned int i, j, k;
 
 	LOG("%s[0x%X]:\n", message, size);
@@ -548,8 +548,8 @@ static int get_vidpid(int fd, unsigned short VID, unsigned short PID)
 	return 1;
 }
 
-struct usb_handle *get_flash_mode(unsigned short VID, unsigned short PID);
-/*{
+struct usb_handle *get_flash_mode(unsigned short VID, unsigned short PID)
+{
 	char busname[64], devname[64];
 	DIR *busdir, *devdir;
 	struct dirent *de;
@@ -567,14 +567,14 @@ struct usb_handle *get_flash_mode(unsigned short VID, unsigned short PID);
 		return usb;
 	}
 
-	/*printf("busdir: %p\n", busdir);#1#
+	/*printf("busdir: %p\n", busdir);*/
 
 	while ((de = readdir(busdir)) && (found_usb == 0)) {
-		/*printf("dirent: %p\n", de);#1#
+		/*printf("dirent: %p\n", de);*/
 		if (badname(de->d_name))
 			continue;
 		snprintf(busname, sizeof(busname), "%s/%s", "/dev/bus/usb", de->d_name);
-		/*printf("busname: %s\n", busname);#1#
+		/*printf("busname: %s\n", busname);*/
 
 		devdir = opendir(busname);
 
@@ -582,7 +582,7 @@ struct usb_handle *get_flash_mode(unsigned short VID, unsigned short PID);
 			if (badname(de->d_name))
 				continue;
 			snprintf(devname, sizeof(devname), "%s/%s", busname, de->d_name);
-			/*printf("devname: %s\n", devname);#1#
+			/*printf("devname: %s\n", devname);*/
 
 			if ((fd = open(devname, O_RDWR)) < 1) {
 				printf("cannot open %s for writing\n", devname);
@@ -613,7 +613,7 @@ struct usb_handle *get_flash_mode(unsigned short VID, unsigned short PID);
 	}
 	closedir(busdir);
 	return usb;
-}*/
+}
 
 int usb_close(struct usb_handle *h)
 {
@@ -990,7 +990,8 @@ static unsigned long transfer_bulk_async(HANDLE dev, int ep, char *bytes, unsign
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #else
-static unsigned long transfer_bulk_async(struct usb_handle *h, int ep, const void *_bytes, unsigned long size, int timeout, int exact)
+// static unsigned long transfer_bulk_ffi(struct usb_handle *h, int ep, const void *_bytes, unsigned long size, int timeout, int exact);
+static unsigned long transfer_bulk_ffi(struct usb_handle *h, int ep, const void *_bytes, unsigned long size, int timeout, int exact)
 {
 	char *bytes = (char *)_bytes;
 	unsigned long count = 0;
@@ -1113,7 +1114,7 @@ static bool get_reply(HANDLE dev, int ep, char *bytes, unsigned long size, int t
 	unsigned long ret_len = 0;
 	get_reply_len = 0;
 
-	ret_len = transfer_bulk_async(dev, ep, bytes, size, timeout, exact);
+	ret_len = transfer_bulk_ffi(dev, ep, bytes, size, timeout, exact);
 	/*display_buffer_hex_ascii("Replied with ", bytes, ret_len);*/
 
 	if (!ret_len)
@@ -1739,7 +1740,7 @@ repeat_here:
 			snprintf(command, sizeof(command), "%s:%08x", is_2021_device ? "download" : "signature", fp_size);
 			printf("      %s\n", command);
 
-			if (transfer_bulk_async(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1) {
+			if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1) {
 				printf("      Error writing signature command!\n");
 				return 0;
 			}
@@ -1803,7 +1804,7 @@ repeat_here:
 
 			fclose(fp);
 
-			if (transfer_bulk_async(dev, EP_OUT, buffer, fp_size, USB_TIMEOUT, 1) < 1) {
+			if (transfer_bulk_ffi(dev, EP_OUT, buffer, fp_size, USB_TIMEOUT, 1) < 1) {
 				printf("      Error writing signature!\n");
 				if (buffer) free(buffer);
 				return 0;
@@ -1835,7 +1836,7 @@ repeat_here:
 				snprintf(command, sizeof(command), "signature");
 				printf("      %s\n", command);
 
-				if (transfer_bulk_async(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1)
+				if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1)
 				{
 					printf("      Error writing signature command!\n");
 					return 0;
@@ -1878,7 +1879,7 @@ repeat_here:
 			snprintf(command, sizeof(command), "download:%08x", fp_size);
 			printf("      %s\n", command);
 
-			if (transfer_bulk_async(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1) {
+			if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1) {
 				printf("      Error writing download command!\n");
 				return 0;
 			}
@@ -1938,7 +1939,7 @@ repeat_here:
 					}
 				}
 
-				if (transfer_bulk_async(dev, EP_OUT, buffer, fp_read, USB_TIMEOUT, 1) < 1) {
+				if (transfer_bulk_ffi(dev, EP_OUT, buffer, fp_read, USB_TIMEOUT, 1) < 1) {
 					printf("         Error uploading chunk %d!\n", g);
 					fclose(fp);
 					if (buffer) free(buffer);
@@ -1975,7 +1976,7 @@ repeat_here:
 					if (memcmp(current_slot, "a", 1) == 0 || memcmp(current_slot, "b", 1) == 0)
 					{
 						snprintf(command, sizeof(command), "getvar:has-slot:%s", flashfile);
-						if (transfer_bulk_async(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1) {
+						if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1) {
 							printf(" - Error writing command %s!\n", command);
 							return 0;
 						}
@@ -2023,7 +2024,7 @@ repeat_here:
 
 					printf("      %s\n", command);
 
-					if (transfer_bulk_async(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1) {
+					if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1) {
 						printf("      Error writing %s!\n", command);
 						return 0;
 					}
@@ -2085,7 +2086,7 @@ repeat_here:
 				printf("      %s\n", command);
 			}
 
-			if (transfer_bulk_async(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1) {
+			if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1) {
 				printf("      Error writing %s!\n", command);
 				return 0;
 			}
@@ -2533,7 +2534,7 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 						snprintf(command, sizeof(command), "download:%08x", unit_sz);
 						printf("      %s\n", command);
 
-						if (transfer_bulk_async(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1) {
+						if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1) {
 							printf("      Error writing download command!\n");
 							ret = 0;
 							goto finish_proced_ta;
@@ -2559,7 +2560,7 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 
 						if (unit_sz > 0)
 						{
-							if (transfer_bulk_async(dev, EP_OUT, unit_data, unit_sz, USB_TIMEOUT, 1) < 1) {
+							if (transfer_bulk_ffi(dev, EP_OUT, unit_data, unit_sz, USB_TIMEOUT, 1) < 1) {
 								printf("      Error writing unit data!\n");
 								ret = 0;
 								goto finish_proced_ta;
@@ -2589,7 +2590,7 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 						snprintf(command, sizeof(command), "Write-TA:%u:%u", partition, unit_dec);
 						printf("      %s\n", command);
 
-						if (transfer_bulk_async(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1) {
+						if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1) {
 							printf("      Error writing command WriteTA!\n");
 							ret = 0;
 							goto finish_proced_ta;
@@ -3049,6 +3050,8 @@ int main(int argc, char *argv[])
 		// }
 	}
 
+	goto skip;
+
 /*============================================  reboot mode ==========================================*/
 
 	if (argc < 2)
@@ -3094,7 +3097,7 @@ int main(int argc, char *argv[])
 
 	if (argc > 1)
 	{
-		if (transfer_bulk_async(dev, EP_OUT, argv[1], strlen(argv[1]), USB_TIMEOUT, 1) < 1)
+		if (transfer_bulk_ffi(dev, EP_OUT, argv[1], strlen(argv[1]), USB_TIMEOUT, 1) < 1)
 		{
 			printf("Error writing commad: %s\n", argv[1]);
 			ret = 1;
@@ -3236,7 +3239,7 @@ int main(int argc, char *argv[])
 		{
 			snprintf(tmp, sizeof(tmp), "Read-all-TA:%d", i);
 
-			if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+			if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 			{
 				printf("Error dumping trimarea partition %d !!\n", i);
 				ret = 1;
@@ -3463,10 +3466,12 @@ int main(int argc, char *argv[])
 		goto endflashing;
 	}
 
+	skip:
+
 /*=========================================  DEVICE INFO  ============================================*/
 
 	snprintf(tmp, sizeof(tmp), "getvar:max-download-size");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing command %s!\n", tmp);
 		ret = 1;
@@ -3485,7 +3490,7 @@ int main(int argc, char *argv[])
 		sscanf(tmp_reply, "%u", &max_download_size);
 
 	snprintf(tmp, sizeof(tmp), "getvar:product");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing command %s!\n", tmp);
 		ret = 1;
@@ -3501,7 +3506,7 @@ int main(int argc, char *argv[])
 	snprintf(product, sizeof(product), "%s", tmp_reply);
 
 	snprintf(tmp, sizeof(tmp), "getvar:version");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing command %s!\n", tmp);
 		ret = 1;
@@ -3517,7 +3522,7 @@ int main(int argc, char *argv[])
 	snprintf(version, sizeof(version), "%s", tmp_reply);
 
 	snprintf(tmp, sizeof(tmp), "getvar:version-bootloader");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing command %s!\n", tmp);
 		ret = 1;
@@ -3533,7 +3538,7 @@ int main(int argc, char *argv[])
 	snprintf(version_bootloader, sizeof(version_bootloader), "%s", tmp_reply);
 
 	snprintf(tmp, sizeof(tmp), "getvar:version-baseband");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing command %s!\n", tmp);
 		ret = 1;
@@ -3549,7 +3554,7 @@ int main(int argc, char *argv[])
 	snprintf(version_baseband, sizeof(version_baseband), "%s", tmp_reply);
 
 	snprintf(tmp, sizeof(tmp), "getvar:serialno");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing command %s!\n", tmp);
 		ret = 1;
@@ -3565,7 +3570,7 @@ int main(int argc, char *argv[])
 	snprintf(serialno, sizeof(serialno), "%s", tmp_reply);
 
 	snprintf(tmp, sizeof(tmp), "getvar:secure");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing command %s!\n", tmp);
 		ret = 1;
@@ -3581,7 +3586,7 @@ int main(int argc, char *argv[])
 	snprintf(secure, sizeof(secure), "%s", tmp_reply);
 
 	snprintf(tmp, sizeof(tmp), "getvar:Sector-size");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing command %s!\n", tmp);
 		ret = 1;
@@ -3600,7 +3605,7 @@ int main(int argc, char *argv[])
 		sscanf(tmp_reply, "%u", &sector_size);
 
 	snprintf(tmp, sizeof(tmp), "getvar:Loader-version");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing command %s!\n", tmp);
 		ret = 1;
@@ -3616,7 +3621,7 @@ int main(int argc, char *argv[])
 	snprintf(loader_version, sizeof(loader_version), "%s", tmp_reply);
 
 	snprintf(tmp, sizeof(tmp), "getvar:Phone-id");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing command %s!\n", tmp);
 		ret = 1;
@@ -3632,7 +3637,7 @@ int main(int argc, char *argv[])
 	snprintf(phone_id, sizeof(phone_id), "%s", tmp_reply);
 
 	snprintf(tmp, sizeof(tmp), "getvar:Device-id");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing command %s!\n", tmp);
 		ret = 1;
@@ -3648,7 +3653,7 @@ int main(int argc, char *argv[])
 	snprintf(device_id, sizeof(device_id), "%s", tmp_reply);
 
 	snprintf(tmp, sizeof(tmp), "getvar:Platform-id");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing command %s!\n", tmp);
 		ret = 1;
@@ -3664,7 +3669,7 @@ int main(int argc, char *argv[])
 	snprintf(platform_id, sizeof(platform_id), "%s", tmp_reply);
 
 	snprintf(tmp, sizeof(tmp), "getvar:Rooting-status");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing command %s!\n", tmp);
 		ret = 1;
@@ -3680,7 +3685,7 @@ int main(int argc, char *argv[])
 	snprintf(rooting_status, sizeof(rooting_status), "%s", tmp_reply);
 
 	snprintf(tmp, sizeof(tmp), "getvar:Ufs-info");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing command %s!\n", tmp);
 		ret = 1;
@@ -3696,7 +3701,7 @@ int main(int argc, char *argv[])
 	snprintf(ufs_info, sizeof(ufs_info), "%s", tmp_reply);
 
 	snprintf(tmp, sizeof(tmp), "getvar:Emmc-info");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing command %s!\n", tmp);
 		ret = 1;
@@ -3712,7 +3717,7 @@ int main(int argc, char *argv[])
 	snprintf(emmc_info, sizeof(emmc_info), "%s", tmp_reply);
 
 	snprintf(tmp, sizeof(tmp), "getvar:Default-security");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing command %s!\n", tmp);
 		ret = 1;
@@ -3728,7 +3733,7 @@ int main(int argc, char *argv[])
 	snprintf(default_security, sizeof(default_security), "%s", tmp_reply);
 
 	snprintf(tmp, sizeof(tmp), "getvar:Keystore-counter");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing command %s!\n", tmp);
 		ret = 1;
@@ -3747,7 +3752,7 @@ int main(int argc, char *argv[])
 		sscanf(tmp_reply, "%u", &keystore_counter);
 
 	snprintf(tmp, sizeof(tmp), "getvar:Security-state");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing command %s!\n", tmp);
 		ret = 1;
@@ -3763,7 +3768,7 @@ int main(int argc, char *argv[])
 	snprintf(security_state, sizeof(security_state), "%s", tmp_reply);
 
 	snprintf(tmp, sizeof(tmp), "getvar:S1-root");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing command %s!\n", tmp);
 		ret = 1;
@@ -3779,7 +3784,7 @@ int main(int argc, char *argv[])
 	snprintf(s1_root, sizeof(s1_root), "%s", tmp_reply);
 
 	snprintf(tmp, sizeof(tmp), "getvar:Sake-root");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing command %s!\n", tmp);
 		ret = 1;
@@ -3795,7 +3800,7 @@ int main(int argc, char *argv[])
 	snprintf(sake_root, sizeof(sake_root), "%s", tmp_reply);
 
 	snprintf(tmp, sizeof(tmp), "Get-root-key-hash");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing command %s!\n", tmp);
 		ret = 1;
@@ -3862,7 +3867,7 @@ int main(int argc, char *argv[])
 	okay_replied = false;
 
 	snprintf(tmp, sizeof(tmp), "getvar:slot-count");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing command %s, ignore this error!\n", tmp);
 	}
@@ -3873,7 +3878,7 @@ int main(int argc, char *argv[])
 			snprintf(slot_count, sizeof(slot_count), "%s", tmp_reply);
 
 			snprintf(tmp, sizeof(tmp), "getvar:current-slot");
-			if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+			if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 			{
 				printf(" - Error writing command %s, ignore this error!\n", tmp);
 			}
@@ -3886,7 +3891,7 @@ int main(int argc, char *argv[])
 	}
 
 	snprintf(tmp, sizeof(tmp), "getvar:Battery");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing command %s!\n", tmp);
 		ret = 1;
@@ -3961,7 +3966,7 @@ int main(int argc, char *argv[])
 
 	printf("\n");
 
-	if (transfer_bulk_async(dev, EP_OUT, "download:00000001", 17, USB_TIMEOUT, 1) < 1) {
+	if (transfer_bulk_ffi(dev, EP_OUT, "download:00000001", 17, USB_TIMEOUT, 1) < 1) {
 		printf("Error writing command 'go into flashmode'!\n");
 		ret = 1;
 		goto endflashing;
@@ -3988,7 +3993,7 @@ int main(int argc, char *argv[])
 		goto endflashing;
 	}
 
-	if (transfer_bulk_async(dev, EP_OUT, "\x01", 1, USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, "\x01", 1, USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing 'go into flashmode' value 1!\n");
 		ret = 1;
@@ -4016,7 +4021,7 @@ int main(int argc, char *argv[])
 		goto endflashing;
 	}
 
-	if (transfer_bulk_async(dev, EP_OUT, "Write-TA:2:10100", 16, USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, "Write-TA:2:10100", 16, USB_TIMEOUT, 1) < 1)
 	{
 		printf("Error writing TA 'go into flashmode'!\n");
 		ret = 1;
@@ -4093,7 +4098,7 @@ int main(int argc, char *argv[])
 
 			snprintf(tmp, sizeof(tmp), "%s", have_ufs ? "Get-ufs-info" : "Get-emmc-info");
 
-			if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+			if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 			{
 				printf(" - Error writing command %s!\n", tmp);
 				ret = 1;
@@ -4963,7 +4968,7 @@ getoutofflashing:
 /*=========================================    bootloader log    ========================================*/
 
 	snprintf(tmp, sizeof(tmp), "Getlog");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf("Error writing commad: %s\n", tmp);
 		ret = 1;
@@ -5078,7 +5083,7 @@ getoutofflashing:
 /*=========================================  firmwares history log    ========================================*/
 
 	snprintf(tmp, sizeof(tmp), "Read-TA:2:2475");
-	if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
 		printf("Error writing commad: %s\n", tmp);
 		ret = 1;
@@ -5199,7 +5204,7 @@ slot_setup:
 	{
 		snprintf(tmp, sizeof(tmp), "set_active:%s", current_slot);
 
-		if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+		if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 		{
 				printf("Error writing command '%s'!\n", tmp);
 				ret = 1;
@@ -5234,7 +5239,7 @@ slot_setup:
 
 	printf("\n");
 
-	if (transfer_bulk_async(dev, EP_OUT, "download:00000001", 17, USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, "download:00000001", 17, USB_TIMEOUT, 1) < 1)
 	{
 		printf("Error writing command 'go out of flashmode'!\n");
 		ret = 1;
@@ -5262,7 +5267,7 @@ slot_setup:
 		goto endflashing;
 	}
 
-	if (transfer_bulk_async(dev, EP_OUT, "\x00", 1, USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, "\x00", 1, USB_TIMEOUT, 1) < 1)
 	{
 		printf(" - Error writing 'go out of flashmode' value 0!\n");
 		ret = 1;
@@ -5290,7 +5295,7 @@ slot_setup:
 		goto endflashing;
 	}
 
-	if (transfer_bulk_async(dev, EP_OUT, "Write-TA:2:10100", 16, USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, "Write-TA:2:10100", 16, USB_TIMEOUT, 1) < 1)
 	{
 		printf("Error writing TA 'go out of flashmode'!\n");
 		ret = 1;
@@ -5327,7 +5332,7 @@ endflashing:
 	if (something_flashed)
 	{
 		snprintf(tmp, sizeof(tmp), "Sync");
-		if (transfer_bulk_async(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+		if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 		{
 			printf(" - Error writing command %s!\n", tmp);
 			ret = 1;
@@ -5377,7 +5382,7 @@ endflashing:
 		}
 
 retry:
-		if (transfer_bulk_async(dev, EP_OUT, reboot_string, strlen(reboot_string), USB_TIMEOUT, 1) < 1)
+		if (transfer_bulk_ffi(dev, EP_OUT, reboot_string, strlen(reboot_string), USB_TIMEOUT, 1) < 1)
 		{
 			printf(" - Error writing command %s!\n", reboot_string);
 			ret = 1;
