@@ -1,17 +1,16 @@
 mod tests;
 
+use std::cmp::{PartialEq};
 use nusb::transfer::{Bulk, Direction, In, Out};
 use nusb::{Device, Interface, MaybeFuture};
 use std::ffi::{c_char, c_int, c_uchar, c_ushort, CStr};
 use std::fs::File;
-use std::io::{BufRead, Read, Write};
+use std::io::{Read, Write};
 
 use nusb::io::{EndpointRead, EndpointWrite};
 use std::os::fd::RawFd;
 use std::path::Path;
-use std::slice;
 use std::time::Duration;
-use arrayvec::ArrayVec;
 use log::error;
 
 const IN: u8 = 0x81;
@@ -59,23 +58,23 @@ pub extern "C" fn file_size(ptr: *const c_char) -> u32 {
     0
 }
 
-// #[unsafe(no_mangle)]
-// pub extern "C" fn get_flash_mode(vid: c_ushort, pid: c_ushort) -> *mut UsbHandle {
-//     let usb = get_flash_mode_rs(vid, pid);
-//
-//     let raw_fd = unsafe { *(&usb.device as *const Device as *const RawFd) };
-//
-//     // technically a memory leak, but we only call this function once
-//     let handle = Box::new(UsbHandle {
-//         fname: [0; 64],
-//         file_desc: raw_fd,
-//         ep_in: IN,
-//         ep_out: OUT,
-//         _stuff: usb
-//     });
-//
-//     Box::into_raw(handle)
-// }
+#[unsafe(no_mangle)]
+pub extern "C" fn get_flash_mode(vid: c_ushort, pid: c_ushort) -> *mut UsbHandle {
+    let usb = get_flash_mode_rs(vid, pid);
+
+    let raw_fd = unsafe { *(&usb.device as *const Device as *const RawFd) };
+
+    // technically a memory leak, but we only call this function once
+    let handle = Box::new(UsbHandle {
+        fname: [0; 64],
+        file_desc: raw_fd,
+        ep_in: IN,
+        ep_out: OUT,
+        _stuff: usb
+    });
+
+    Box::into_raw(handle)
+}
 
 pub fn get_flash_mode_rs(vid: u16, pid: u16) -> UsbInterfaces {
     let di = nusb::list_devices()
@@ -94,41 +93,44 @@ pub fn get_flash_mode_rs(vid: u16, pid: u16) -> UsbInterfaces {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn transfer_bulk_ffi(unsafe_handle: *mut UsbHandle, ep: i32, chars: *mut u8, size: usize, _timeout: i32, exact: i32) -> u64 {
+pub extern "C" fn transfer_bulk_ffi(unsafe_handle: *mut UsbHandle, ep: i32, chars: *mut u8, size: usize, _timeout: i32, exact: i32) -> usize {
     let handle = unsafe { &mut *unsafe_handle };
     let direction = match ep {
         0 => Direction::In,
         1 => Direction::Out,
         _ => return 0
     };
-    let slice = unsafe { slice::from_raw_parts_mut(chars, size) };
 
-    match transfer_bulk_rs(&mut handle._stuff, direction, slice, exact != 0) {
-        Ok(_) => size as u64,
-        Err(_) => 0
-    }
+    let mut slice = unsafe { Vec::from_raw_parts(chars, size, size) };
+
+    transfer_bulk_rs(&mut handle._stuff, direction, &mut slice, exact != 0).unwrap_or_else(|_| 0)
 }
 
 pub fn transfer_bulk_rs(
     stuff: &mut UsbInterfaces,
     direction: Direction,
-    buffer: &mut [u8],
+    vec: &mut Vec<u8>,
     exact: bool
 ) -> std::io::Result<usize> {
     if exact {
         match match direction {
-            Direction::In => stuff.reader.read_exact(buffer),
+            Direction::In => stuff.reader.read_exact(vec),
             Direction::Out => {
-                stuff.writer.write_all(buffer).expect("Failed to write to device!");
+                if let Err(e) = stuff.writer.write_all(vec) {
+                    return Err(e);
+                }
                 stuff.writer.flush_end()
             }
         } {
-            Ok(_) => Ok(buffer.len()),
+            Ok(_) => Ok(vec.len()),
             Err(e) => Err(e)
         }
     } else {
         if direction == Direction::In {
-            return stuff.reader.read(buffer);
+            let mut short_reader = stuff.reader.until_short_packet();
+            let len = short_reader.read_to_end(vec);
+            short_reader.consume_end().unwrap();
+            return len;
         }
         // TODO: not writing all doesnt really make sense
         todo!();
@@ -136,51 +138,85 @@ pub fn transfer_bulk_rs(
     }
 }
 
-const BUFF_MAX: usize = 0x100_0000;
+// #[unsafe(no_mangle)]
+// pub extern "C" fn get_reply(unsafe_handle: *mut UsbHandle, _ep: i32, chars: *mut u8, size: usize, _timeout: i32, exact: i32) -> {
+//     let handle = unsafe { &mut *unsafe_handle };
+//     let slice = unsafe { slice::from_raw_parts_mut(chars, size) };
+//     get_reply_rs(&mut handle._stuff,)
+// };
 
-// TODO: reply can just be an array
-pub fn get_reply_rs(stuff: &mut UsbInterfaces, reply: &mut ArrayVec<u8, 4096>, exact: bool) -> bool {
-    reply.clear();
-    let mut buffer = [0u8; 4096];
+#[derive(PartialEq, Eq)]
+pub enum FastbootReply {
+    Fail,
+    Okay,
+    Data,
+}
 
-    let Ok(ret_len) = transfer_bulk_rs(stuff, Direction::In, buffer.as_mut(), exact) else {
-        return false;
-    };
-
-    if ret_len > BUFF_MAX {
-        println!("Bug!!! ret_len: {:#x} > BUFF_MAX: {:#x}", ret_len, BUFF_MAX);
-        return false;
-    }
-
-    let prefix = &buffer[..4];
-
-    let b = match prefix {
-        b"OKAY" | b"FAIL" if ret_len == 4 => {
-            reply.try_extend_from_slice(&buffer[..4]).is_ok()
-        },
-        b"OKAY" if ret_len > 4 => {
-            // strip the "OKAY" prefix and copy the rest
-            reply.try_extend_from_slice(&buffer[4..ret_len]).is_ok()
+impl From<&[u8]> for FastbootReply {
+    fn from(value: &[u8]) -> Self {
+        match value {
+            b"OKAY" => FastbootReply::Okay,
+            b"Data" => FastbootReply::Data,
+            _ => FastbootReply::Fail,
         }
-        b"FAIL" if ret_len > 4 => {
-            reply.try_extend_from_slice(&buffer[..ret_len]).is_ok()
+    }
+}
+
+
+pub fn get_reply_rs(stuff: &mut UsbInterfaces, reply: &mut Vec<u8>, exact: bool) -> Result<FastbootReply, std::io::Error> {
+    reply.clear();
+
+    let ret_len = transfer_bulk_rs(stuff, Direction::In, reply, exact)?;
+
+    // const BUFF_MAX: usize = 0x100_0000;
+    // if ret_len > BUFF_MAX {
+    //     println!("Bug!!! ret_len: {:#x} > BUFF_MAX: {:#x}", ret_len, BUFF_MAX);
+    //     return false;
+    // }
+
+    let prefix: FastbootReply = reply[0..4].into();
+
+    match prefix {
+        FastbootReply::Okay | FastbootReply::Fail if ret_len == 4 => {
+            reply.clear();
         },
+        FastbootReply::Okay | FastbootReply::Fail if ret_len > 4 => {
+            // strip the prefix and copy the rest
+            reply.drain(0..4);
+        }
         // xperia 10 mark 3 XQ-BT41 send 13 bytes where last byte is null termination, fixing it to 12
-        b"DATA" if ret_len == 12 || ret_len == 13 => {
-            reply.try_extend_from_slice(&buffer[..12]).is_ok()
+        FastbootReply::Data if ret_len == 12 || ret_len == 13 => {
+            reply.truncate(12);
         },
         _ => unsafe {
-            if prefix == b"DATA" {
+            if prefix == FastbootReply::Data {
                 error!(" - Erroneous DATA reply!");
-                display_buffer_hex_ascii(c"Replied with ".as_ptr(), buffer.as_ptr() as *const c_char, ret_len);
+                display_buffer_hex_ascii(c"Replied with ".as_ptr(), reply.as_ptr() as *const c_char, ret_len);
             }
-            false
         }
     };
 
     // add the null terminator since the C functions expect it
-    if let Err(e) = reply.try_push(0) {
+    reply.push(0);
+    Ok(prefix)
+}
+
+fn check_reply(buffer: &mut Vec<u8>, usb: &mut UsbInterfaces, var: &[u8], expected: &str) -> bool {
+    buffer.clear();
+    buffer.extend_from_slice(var);
+
+    if let Err(e) = transfer_bulk_rs(usb, Direction::Out, buffer, true) {
+        error!("{}", e);
         return false;
     }
-    b
+
+    if let Err(e) = get_reply_rs(usb, buffer, false) {
+        error!("{}", e);
+        return false;
+    }
+
+    buffer.truncate(buffer.len() - 1);
+
+    let value = str::from_utf8(buffer).expect(&format!("Failed to parse {:?} as str", buffer.as_slice()));
+    value.eq(expected)
 }

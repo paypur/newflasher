@@ -548,8 +548,8 @@ static int get_vidpid(int fd, unsigned short VID, unsigned short PID)
 	return 1;
 }
 
-struct usb_handle *get_flash_mode(unsigned short VID, unsigned short PID)
-{
+struct usb_handle *get_flash_mode(unsigned short VID, unsigned short PID);
+/*{
 	char busname[64], devname[64];
 	DIR *busdir, *devdir;
 	struct dirent *de;
@@ -612,8 +612,11 @@ struct usb_handle *get_flash_mode(unsigned short VID, unsigned short PID)
 		closedir(devdir);
 	}
 	closedir(busdir);
+	
+	printf("c: raw desc: %d\n", usb->desc);
+	
 	return usb;
-}
+}*/
 
 int usb_close(struct usb_handle *h)
 {
@@ -990,9 +993,8 @@ static unsigned long transfer_bulk_async(HANDLE dev, int ep, char *bytes, unsign
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #else
-// static unsigned long transfer_bulk_ffi(struct usb_handle *h, int ep, const void *_bytes, unsigned long size, int timeout, int exact);
-static unsigned long transfer_bulk_ffi(struct usb_handle *h, int ep, const void *_bytes, unsigned long size, int timeout, int exact)
-{
+static unsigned long transfer_bulk_ffi(struct usb_handle *h, int ep, const void *_bytes, unsigned long size, int timeout, int exact);
+/*{
 	char *bytes = (char *)_bytes;
 	unsigned long count = 0;
 	unsigned long size_tot = size;
@@ -1105,7 +1107,7 @@ static unsigned long transfer_bulk_ffi(struct usb_handle *h, int ep, const void 
 	}
 #endif
 	return count;
-}
+}*/
 #endif
 #endif
 
