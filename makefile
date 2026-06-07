@@ -20,17 +20,17 @@ INSTALL=install
 DESTDIR=
 LIBS=
 
-CFLAGS?=-Wall -g -O2
+CFLAGS?=-Wall -g -Og
 ifeq ($(OS),Darwin)
 CFLAGS+= -I/usr/local/include/libusb-1.0
 LIBS+=-lusb-1.0
 endif
 CROSS_CFLAGS=${CFLAGS} -I include -I zlib-1.3.1 -L zlib-1.3.1 -I expat-2.2.9/lib -L expat-2.2.9/lib/.libs
 
-CARGO_FLAGS = --release
+CARGO_FLAGS =
 RUST_DIR = rust
 RUST_LIB_NAME = nfrs
-RUST_OUT_DIR = $(RUST_DIR)/target/release
+RUST_OUT_DIR = $(RUST_DIR)/target/debug
 STATIC_LIB = $(RUST_OUT_DIR)/lib$(RUST_LIB_NAME).a
 
 .PHONY: default
