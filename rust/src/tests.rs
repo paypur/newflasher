@@ -13,16 +13,33 @@ mod tests {
     const VID: u16 = 0x0FCE;
     const PID: u16 = 0xB00B;
 
+    fn check_reply(buffer: &mut Vec<u8>, usb: &mut UsbInterfaces, var: &[u8], expected: &str) -> bool {
+        buffer.clear();
+        buffer.extend_from_slice(var);
+
+        if let Err(e) = output_bulk(usb, buffer) {
+            error!("{}", e);
+            return false;
+        }
+
+        if let Err(e) = get_reply(usb, buffer, false) {
+            error!("{}", e);
+            return false;
+        }
+
+        buffer.truncate(buffer.len() - 1);
+
+        let value = str::from_utf8(buffer).expect(&format!("Failed to parse {:?} as str", buffer.as_slice()));
+        value.eq(expected)
+    }
+    
     #[test]
     fn test_fastboot_vars() {
         let mut vec = Vec::<u8>::new();
         let mut usb = get_flash_mode_rs(VID, PID);
 
-        // let max_download_size = str::from_utf8(&reply).expect(&format!("Failed to parse {:?} as str", reply.as_slice()))
-        //                                     .parse::<i32>().expect(&format!("Failed to parse {:?} as i32", str));
-
         // $ fastboot getvar all
-        assert!(check_reply(&mut vec, &mut usb, b"getvar:max-download-size", "805306368"));
+        assert_eq!(getvar_max_download_size(&mut usb, &mut vec), 805306368);
         assert!(check_reply(&mut vec, &mut usb, b"getvar:product", "XQ-EC72"));
         assert!(check_reply(&mut vec, &mut usb, b"getvar:version", "0.4"));
         assert!(check_reply(&mut vec, &mut usb, b"getvar:version-bootloader", "8650-0001_X_Boot_SM8650_LA1.0_U_36"));

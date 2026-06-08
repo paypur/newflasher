@@ -10,6 +10,7 @@ use std::io::{Read, Write};
 use nusb::io::{EndpointRead, EndpointWrite};
 use std::os::fd::RawFd;
 use std::path::Path;
+use std::slice;
 use std::time::Duration;
 use log::error;
 
@@ -34,10 +35,39 @@ pub struct UsbInterfaces {
     writer: EndpointWrite<Bulk>
 }
 
+#[repr(C)]
+pub struct CVec {
+    pub ptr: *mut u8,
+    pub len: usize,
+    pub capacity: usize,
+}
+
 // C globals and functions
 unsafe extern "C" {
     pub fn display_buffer_hex_ascii(message: *const c_char, buffer: *const c_char, size: usize);
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn new_cvec(capacity: usize) -> CVec {
+    into_cvec(Vec::with_capacity(capacity))
+}
+
+fn into_cvec(vec: Vec<u8>) -> CVec {
+    let (ptr, len, capacity) = vec.into_raw_parts();
+    CVec { ptr, len, capacity }
+}
+
+fn from_cvec(cvec: &CVec) -> Vec<u8> {
+    unsafe { Vec::from_raw_parts(cvec.ptr, cvec.len, cvec.capacity) }
+}
+
+fn return_vec(cvec: &mut CVec, vec: Vec<u8>) {
+    let (ptr, len, capacity) = vec.into_raw_parts();
+    cvec.ptr = ptr;
+    cvec.len = len;
+    cvec.capacity = capacity;
+}
+
 
 #[unsafe(no_mangle)]
 pub extern "C" fn file_exist(ptr: *const c_char) -> i32 {
@@ -93,63 +123,72 @@ pub fn get_flash_mode_rs(vid: u16, pid: u16) -> UsbInterfaces {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn transfer_bulk_ffi(unsafe_handle: *mut UsbHandle, ep: i32, chars: *mut u8, size: usize, _timeout: i32, exact: i32) -> usize {
+pub extern "C" fn transfer_bulk_ffi(unsafe_handle: *mut UsbHandle, ep: i32, chars: *mut u8, len: usize, capacity: usize, _timeout: i32, exact: i32) -> usize {
     let handle = unsafe { &mut *unsafe_handle };
-    let direction = match ep {
-        0 => Direction::In,
-        1 => Direction::Out,
-        _ => return 0
-    };
 
-    let mut slice = unsafe { Vec::from_raw_parts(chars, size, size) };
-
-    transfer_bulk_rs(&mut handle._stuff, direction, &mut slice, exact != 0).unwrap_or_else(|_| 0)
+    match ep {
+        0 => {
+            let mut vec = unsafe { Vec::from_raw_parts(chars, len, capacity) };
+            let res = input_bulk(&mut handle._stuff, &mut vec, exact != 0);
+            let _ = vec.into_raw_parts(); // make sure rust doesnt drop this
+            res
+        },
+        1 => output_bulk(&mut handle._stuff, unsafe { slice::from_raw_parts(chars, len) }),
+        _ => panic!()
+    }.unwrap_or_else(|_| 0)
 }
 
-pub fn transfer_bulk_rs(
+
+
+pub fn output_bulk(
     stuff: &mut UsbInterfaces,
-    direction: Direction,
+    data: &[u8],
+) -> std::io::Result<usize> {
+    if let Err(e) = stuff.writer.write_all(data) {
+        return Err(e);
+    }
+
+    match stuff.writer.flush_end() {
+        Ok(_) => Ok(data.len()),
+        Err(e) => Err(e)
+    }
+}
+
+pub fn input_bulk(
+    stuff: &mut UsbInterfaces,
     vec: &mut Vec<u8>,
     exact: bool
 ) -> std::io::Result<usize> {
     if exact {
-        match match direction {
-            Direction::In => stuff.reader.read_exact(vec),
-            Direction::Out => {
-                if let Err(e) = stuff.writer.write_all(vec) {
-                    return Err(e);
-                }
-                stuff.writer.flush_end()
-            }
-        } {
+        match stuff.reader.read_exact(vec) {
             Ok(_) => Ok(vec.len()),
             Err(e) => Err(e)
         }
     } else {
-        if direction == Direction::In {
-            let mut short_reader = stuff.reader.until_short_packet();
-            let len = short_reader.read_to_end(vec);
-            short_reader.consume_end().unwrap();
-            return len;
-        }
-        // TODO: not writing all doesnt really make sense
-        todo!();
-        Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "timeout"))
+        let mut short_reader = stuff.reader.until_short_packet();
+        let len = short_reader.read_to_end(vec);
+        short_reader.consume_end().unwrap();
+        len
     }
 }
 
-// #[unsafe(no_mangle)]
-// pub extern "C" fn get_reply(unsafe_handle: *mut UsbHandle, _ep: i32, chars: *mut u8, size: usize, _timeout: i32, exact: i32) -> {
-//     let handle = unsafe { &mut *unsafe_handle };
-//     let slice = unsafe { slice::from_raw_parts_mut(chars, size) };
-//     get_reply_rs(&mut handle._stuff,)
-// };
+#[unsafe(no_mangle)]
+pub extern "C" fn get_reply_ffi(unsafe_handle: *mut UsbHandle, cvec: &mut CVec, exact: i32) -> FastbootReply {
+    let handle = unsafe { &mut *unsafe_handle };
+    let mut vec = from_cvec(cvec);
+    let res = get_reply(&mut handle._stuff, &mut vec, exact != 0);
+    return_vec(cvec, vec);
+    res.unwrap_or_else(|_| FastbootReply::Error)
+}
 
+#[repr(C)]
 #[derive(PartialEq, Eq)]
+#[derive(Debug)]
 pub enum FastbootReply {
-    Fail,
+    Error = 0,
     Okay,
     Data,
+    Fail
 }
 
 impl From<&[u8]> for FastbootReply {
@@ -162,11 +201,10 @@ impl From<&[u8]> for FastbootReply {
     }
 }
 
-
-pub fn get_reply_rs(stuff: &mut UsbInterfaces, reply: &mut Vec<u8>, exact: bool) -> Result<FastbootReply, std::io::Error> {
+pub fn get_reply(stuff: &mut UsbInterfaces, reply: &mut Vec<u8>, exact: bool) -> Result<FastbootReply, std::io::Error> {
     reply.clear();
 
-    let ret_len = transfer_bulk_rs(stuff, Direction::In, reply, exact)?;
+    let ret_len = input_bulk(stuff, reply, exact)?;
 
     // const BUFF_MAX: usize = 0x100_0000;
     // if ret_len > BUFF_MAX {
@@ -201,22 +239,88 @@ pub fn get_reply_rs(stuff: &mut UsbInterfaces, reply: &mut Vec<u8>, exact: bool)
     Ok(prefix)
 }
 
-fn check_reply(buffer: &mut Vec<u8>, usb: &mut UsbInterfaces, var: &[u8], expected: &str) -> bool {
+#[unsafe(no_mangle)]
+pub extern "C" fn getvar_ffi(usb_handle: *mut UsbHandle, cvec: &mut CVec, var: *const u8, str: *mut u8, len: usize) {
+    let usb = &mut unsafe { &mut *usb_handle }._stuff;
+    let mut buffer = from_cvec(cvec);
+    getvar(usb, &mut buffer, unsafe { &CStr::from_ptr(var as *const c_char) }, unsafe { slice::from_raw_parts_mut(str, len) });
+    return_vec(cvec, buffer);
+}
+
+pub fn getvar(usb: &mut UsbInterfaces, buffer: &mut Vec<u8>, var: &CStr, str: &mut [u8]) {
     buffer.clear();
-    buffer.extend_from_slice(var);
 
-    if let Err(e) = transfer_bulk_rs(usb, Direction::Out, buffer, true) {
+    if let Err(e) = output_bulk(usb, var.to_bytes()) {
         error!("{}", e);
-        return false;
+        return;
     }
 
-    if let Err(e) = get_reply_rs(usb, buffer, false) {
-        error!("{}", e);
-        return false;
+    match get_reply(usb, buffer, false) {
+        Ok(reply) => assert_ne!(reply, FastbootReply::Error),
+        Err(e) => {
+            error!("{}", e);
+            return;
+        }
     }
 
-    buffer.truncate(buffer.len() - 1);
+    let len = buffer.len();
+    str[..len].clone_from_slice(&buffer.as_slice()[..len]);
+}
 
-    let value = str::from_utf8(buffer).expect(&format!("Failed to parse {:?} as str", buffer.as_slice()));
-    value.eq(expected)
+#[unsafe(no_mangle)]
+pub extern "C" fn getvar_u32_ffi(usb_handle: *mut UsbHandle, cvec: &mut CVec, var: *const u8, default: u32) -> u32 {
+    let usb = &mut unsafe { &mut *usb_handle }._stuff;
+    let mut buffer = from_cvec(cvec);
+    let u = getvar_u32(usb, &mut buffer, unsafe { &CStr::from_ptr(var as *const c_char) }, default);
+    return_vec(cvec, buffer);
+    u
+}
+
+pub fn getvar_u32(usb: &mut UsbInterfaces, buffer: &mut Vec<u8>, var: &CStr, default: u32) -> u32 {
+    buffer.clear();
+
+    if let Err(e) = output_bulk(usb, var.to_bytes()) {
+        error!("{}", e);
+        return default;
+    }
+
+    match get_reply(usb, buffer, false) {
+        Ok(reply) => assert_eq!(reply, FastbootReply::Okay),
+        Err(e) => {
+            error!("{}", e);
+            return default;
+        }
+    }
+
+    let c_str = CStr::from_bytes_with_nul(&buffer).expect(&format!("Failed to parse {:?} as C string", buffer.as_slice()));
+    let str = str::from_utf8(c_str.to_bytes()).expect(&format!("Failed to parse {:?} as str", c_str));
+    str.parse::<u32>().expect(&format!("Failed to parse {:?} as u32", str))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn getvar_max_download_size_ffi(usb_handle: *mut UsbHandle, cvec: &CVec) -> u32 {
+    let usb = & mut unsafe { &mut *usb_handle }._stuff;
+    let mut buffer = from_cvec(cvec);
+    getvar_max_download_size(usb, &mut buffer)
+}
+
+pub fn getvar_max_download_size(usb: &mut UsbInterfaces, buffer: &mut Vec<u8>) -> u32 {
+    buffer.clear();
+
+    if let Err(e) = output_bulk(usb, b"getvar:max-download-size") {
+        error!("{}", e);
+        return 0;
+    }
+
+    match get_reply(usb, buffer, false) {
+        Ok(reply) => assert_eq!(reply, FastbootReply::Okay),
+        Err(e) => {
+            error!("{}", e);
+            return 0;
+        }
+    }
+
+    let c_str = CStr::from_bytes_with_nul(&buffer).expect(&format!("Failed to parse {:?} as C string", buffer.as_slice()));
+    let str = str::from_utf8(c_str.to_bytes()).expect(&format!("Failed to parse {:?} as str", c_str));
+    str.parse::<u32>().expect(&format!("Failed to parse {:?} as u32", str))
 }
