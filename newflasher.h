@@ -13,9 +13,10 @@ struct RustVec new_cvec(size_t capacity);
 
 enum FastbootReply {
     FR_ERROR = 0,
+    FR_NO_HEADER,
     FR_OKAY,
     FR_DATA,
-    FR_FAIL
+    FR_FAIL,
 };
 
 struct usb_handle
@@ -31,7 +32,5 @@ typedef struct usb_handle *HANDLE;
 
 void getvar_ffi(HANDLE handle, struct RustVec *cvec, const char *var, char* str_buf, size_t len);
 uint32_t getvar_u32_ffi(HANDLE handle, struct RustVec *cvec, const char *var, uint32_t fallback);
-
-uint32_t getvar_max_download_size_ffi(HANDLE handle, struct RustVec *cvec);
 
 #endif //NEWFLASHER_H

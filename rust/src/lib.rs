@@ -134,10 +134,9 @@ pub extern "C" fn transfer_bulk_ffi(unsafe_handle: *mut UsbHandle, ep: i32, char
             res
         },
         1 => output_bulk(&mut handle._stuff, unsafe { slice::from_raw_parts(chars, len) }),
-        _ => panic!()
+        _ => panic!("Invalid endpoint direction: {:?}", ep)
     }.unwrap_or_else(|_| 0)
 }
-
 
 
 pub fn output_bulk(
@@ -159,6 +158,7 @@ pub fn input_bulk(
     vec: &mut Vec<u8>,
     exact: bool
 ) -> std::io::Result<usize> {
+    vec.clear();
     if exact {
         match stuff.reader.read_exact(vec) {
             Ok(_) => Ok(vec.len()),
@@ -185,57 +185,54 @@ pub extern "C" fn get_reply_ffi(unsafe_handle: *mut UsbHandle, cvec: &mut CVec, 
 #[derive(PartialEq, Eq)]
 #[derive(Debug)]
 pub enum FastbootReply {
-    Error = 0,
+    Error,
     Okay,
     Data,
-    Fail
+    Fail,
+    NoHeader,
 }
 
 impl From<&[u8]> for FastbootReply {
     fn from(value: &[u8]) -> Self {
         match value {
             b"OKAY" => FastbootReply::Okay,
-            b"Data" => FastbootReply::Data,
-            _ => FastbootReply::Fail,
+            b"DATA" => FastbootReply::Data,
+            b"FAIL" => FastbootReply::Fail,
+            _ => FastbootReply::NoHeader
         }
     }
 }
 
 pub fn get_reply(stuff: &mut UsbInterfaces, reply: &mut Vec<u8>, exact: bool) -> Result<FastbootReply, std::io::Error> {
-    reply.clear();
-
-    let ret_len = input_bulk(stuff, reply, exact)?;
-
-    // const BUFF_MAX: usize = 0x100_0000;
-    // if ret_len > BUFF_MAX {
-    //     println!("Bug!!! ret_len: {:#x} > BUFF_MAX: {:#x}", ret_len, BUFF_MAX);
-    //     return false;
-    // }
+    let mut len = input_bulk(stuff, reply, exact)?;
 
     let prefix: FastbootReply = reply[0..4].into();
 
     match prefix {
-        FastbootReply::Okay | FastbootReply::Fail if ret_len == 4 => {
+        FastbootReply::Okay | FastbootReply::Fail if len == 4 => {
             reply.clear();
         },
-        FastbootReply::Okay | FastbootReply::Fail if ret_len > 4 => {
+        FastbootReply::Okay | FastbootReply::Fail if len > 4 => {
             // strip the prefix and copy the rest
             reply.drain(0..4);
         }
-        // xperia 10 mark 3 XQ-BT41 send 13 bytes where last byte is null termination, fixing it to 12
-        FastbootReply::Data if ret_len == 12 || ret_len == 13 => {
-            reply.truncate(12);
+        // xperia 10 mark 3 XQ-BT41 send 13 bytes where last byte is null termination
+        FastbootReply::Data if len == 12 || len == 13 => {
+            len = usize::from_str_radix(str::from_utf8(&reply[4..12]).expect("Failed to parse DATA header as str"), 16).expect("Failed to parse DATA header as hexadecimal");
+
+            // second read for actual data
+            input_bulk(stuff, reply, exact)?;
+            if FastbootReply::from(&reply[..4]) == FastbootReply::Okay { todo!("unimplemented OKAY after DATA") }
+            assert_eq!(len, reply.len());
+
+            // if not OKAY in 2nd read, should read a 3rd time to acknowledge
+            let mut vec4 = Vec::<u8>::with_capacity(4);
+            input_bulk(stuff, &mut vec4, exact)?;
+            assert_eq!(Into::<FastbootReply>::into(&vec4[..4]), FastbootReply::Okay)
         },
-        _ => unsafe {
-            if prefix == FastbootReply::Data {
-                error!(" - Erroneous DATA reply!");
-                display_buffer_hex_ascii(c"Replied with ".as_ptr(), reply.as_ptr() as *const c_char, ret_len);
-            }
-        }
+        _ => panic!("Invalid fastboot message format {:?}", reply)
     };
 
-    // add the null terminator since the C functions expect it
-    reply.push(0);
     Ok(prefix)
 }
 
@@ -285,42 +282,19 @@ pub fn getvar_u32(usb: &mut UsbInterfaces, buffer: &mut Vec<u8>, var: &CStr, def
     }
 
     match get_reply(usb, buffer, false) {
-        Ok(reply) => assert_eq!(reply, FastbootReply::Okay),
+        Ok(reply) => if reply == FastbootReply::Fail {
+            return default;
+        }
         Err(e) => {
             error!("{}", e);
             return default;
         }
     }
 
-    let c_str = CStr::from_bytes_with_nul(&buffer).expect(&format!("Failed to parse {:?} as C string", buffer.as_slice()));
-    let str = str::from_utf8(c_str.to_bytes()).expect(&format!("Failed to parse {:?} as str", c_str));
-    str.parse::<u32>().expect(&format!("Failed to parse {:?} as u32", str))
+    u32_from_bytes(buffer)
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn getvar_max_download_size_ffi(usb_handle: *mut UsbHandle, cvec: &CVec) -> u32 {
-    let usb = & mut unsafe { &mut *usb_handle }._stuff;
-    let mut buffer = from_cvec(cvec);
-    getvar_max_download_size(usb, &mut buffer)
-}
-
-pub fn getvar_max_download_size(usb: &mut UsbInterfaces, buffer: &mut Vec<u8>) -> u32 {
-    buffer.clear();
-
-    if let Err(e) = output_bulk(usb, b"getvar:max-download-size") {
-        error!("{}", e);
-        return 0;
-    }
-
-    match get_reply(usb, buffer, false) {
-        Ok(reply) => assert_eq!(reply, FastbootReply::Okay),
-        Err(e) => {
-            error!("{}", e);
-            return 0;
-        }
-    }
-
-    let c_str = CStr::from_bytes_with_nul(&buffer).expect(&format!("Failed to parse {:?} as C string", buffer.as_slice()));
-    let str = str::from_utf8(c_str.to_bytes()).expect(&format!("Failed to parse {:?} as str", c_str));
+pub fn u32_from_bytes(buffer: &[u8]) -> u32 {
+    let str = str::from_utf8(buffer).expect(&format!("Failed to parse {:?} as str", buffer));
     str.parse::<u32>().expect(&format!("Failed to parse {:?} as u32", str))
 }
