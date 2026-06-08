@@ -3493,7 +3493,7 @@ int main(int argc, char *argv[])
 	getvar_ffi(dev, &tmp_reply, "getvar:Sake-root", sake_root, sizeof(sake_root));
 	// getvar_ffi(dev, tmp_reply, "Get-root-key-hash", sake_root, sizeof(sake_root));
 
-	// TODO: this is weird
+//  TODO: replace this
 	snprintf(tmp, sizeof(tmp), "Get-root-key-hash");
 	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
 	{
@@ -3502,19 +3502,14 @@ int main(int argc, char *argv[])
 		goto endflashing;
 	}
 
-	if (!get_reply_ffi(dev, &tmp_reply, 0))
+	if (get_reply_ffi(dev, &tmp_reply, 0) != FR_DATA)
 	{
+		printf(" - Error, no DATA reply!\n");
 		ret = 1;
 		goto endflashing;
 	}
 
-	// if (memcmp(tmp_reply.ptr, "DATA", 4) != 0)
-	// {
-	// 	printf(" - Error, no DATA reply!\n");
-	// 	ret = 1;
-	// 	goto endflashing;
-	// }
-
+	// actual data
 	if (!get_reply_ffi(dev, &tmp_reply, 0))
 	{
 		ret = 1;
@@ -3562,9 +3557,10 @@ int main(int argc, char *argv[])
 
 	okay_replied = false;
 
+	// TODO: this is also broken probably because I didnt read another time before this
 	getvar_ffi(dev, &tmp_reply, "getvar:slot-count", slot_count, sizeof(slot_count));
 
-	if (slot_count[1] != 0) {
+	if (slot_count[0] != 0) {
 		getvar_ffi(dev, &tmp_reply, "getvar:current-slot", current_slot, sizeof(current_slot));
 	}
 
