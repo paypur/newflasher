@@ -49,10 +49,10 @@ libs:
 	@test -d expat-2.2.9 && echo "" || tar xzf expat-2.2.9.tar.gz
 	@rm -rf expat-2.2.9.tar.gz
 
-newflasher: newflasher.o version.h $(STATIC_LIB)
+newflasher: newflasher.o $(STATIC_LIB)
 	${CC} ${CFLAGS} $^ -o $@ -lz -lexpat ${LIBS}
 
-newflasher.o: newflasher.c
+newflasher.o: newflasher.c newflasher.h version.h
 	${CC} ${CFLAGS} -c $< -o newflasher.o
 
 $(STATIC_LIB): $(shell find $(RUST_DIR)/src -type f 2>/dev/null) $(RUST_DIR)/Cargo.toml
