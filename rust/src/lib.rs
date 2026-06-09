@@ -3,9 +3,8 @@ mod types;
 
 use nusb::{Device, Interface, MaybeFuture};
 use std::ffi::{c_char, c_ushort, CStr};
-use std::fmt::format;
 use std::fs::File;
-use std::io::{BufRead, Read, Write};
+use std::io::{Read, Write};
 
 use std::os::fd::RawFd;
 use std::path::Path;
@@ -86,7 +85,7 @@ pub fn get_flash_mode_rs(vid: u16, pid: u16) -> UsbInterfaces {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn transfer_bulk_ffi(unsafe_handle: *mut UsbHandle, ep: i32, chars: *mut u8, len: usize, capacity: usize, exact: i32) -> usize {
+pub extern "C" fn transfer_bulk_ffi(unsafe_handle: *mut UsbHandle, ep: i32, chars: *mut u8, len: usize, capacity: usize, _exact: i32) -> usize {
     let handle = unsafe { &mut *unsafe_handle };
 
     match ep {
@@ -136,6 +135,20 @@ pub extern "C" fn fastboot_cmd_ffi(usb_handle: *mut UsbHandle, cvec: &mut CVec, 
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn fastboot_download_ffi(usb_handle: *mut UsbHandle, cvec: &mut CVec, data: *const u8, len: usize) -> bool {
+    let usb = &mut unsafe { &mut *usb_handle }._usb;
+    let mut buffer = from_cvec(cvec);
+    let slice = unsafe { slice::from_raw_parts(data, len) };
+
+    if let Err(e) = fastboot_download(usb, &mut buffer, slice) {
+        error!("{}", e);
+        return false;
+    }
+
+    true
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn getvar_u32_ffi(usb_handle: *mut UsbHandle, cvec: &mut CVec, cmd: *const c_char, fallback: u32) -> u32 {
     let usb = &mut unsafe { &mut *usb_handle }._usb;
     let mut buffer = from_cvec(cvec);
@@ -146,8 +159,9 @@ pub extern "C" fn getvar_u32_ffi(usb_handle: *mut UsbHandle, cvec: &mut CVec, cm
 }
 
 pub fn fastboot_cmd(usb: &mut UsbInterfaces, buffer: &mut Vec<u8>, cmd: &[u8]) -> Result<(), Box<dyn Error>> {
-    if cmd.starts_with(b"getvar:") || cmd.starts_with(b"download:") {
-        transfer(usb, buffer, cmd)?;
+    if cmd.starts_with(b"getvar:") {
+        // normal if it fail
+        output_input_bulk(usb, buffer, cmd)?;
     }
     else if (cmd.starts_with(b"Get-")) {
         output_bulk(usb, cmd)?;
@@ -167,6 +181,12 @@ pub fn fastboot_cmd(usb: &mut UsbInterfaces, buffer: &mut Vec<u8>, cmd: &[u8]) -
         // if not OKAY in 2nd read, should read a 3rd time to acknowledge
         assert_eq!(get_reply(usb, &mut vec![0, 0, 0, 0])?, FastbootHeader::Okay);
     }
+    else if cmd.eq(b"Write-TA:2:10100") {
+        let header = output_input_bulk(usb, buffer, cmd)?;
+        if header != FastbootHeader::Okay {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Expected OKAY header, received {:?}", header)).into());
+        }
+    }
     else {
         panic!("Fastboot command prefix '{}' not found", str::from_utf8(cmd).unwrap());
     }
@@ -174,14 +194,14 @@ pub fn fastboot_cmd(usb: &mut UsbInterfaces, buffer: &mut Vec<u8>, cmd: &[u8]) -
     Ok(())
 }
 
-/// Tires to write data to device
+/// Tries to write data to device
 pub fn fastboot_download(usb: &mut UsbInterfaces, buffer: &mut Vec<u8>, data: &[u8]) -> Result<(), Box<dyn Error>> {
     let mut full_cmd = b"download:".to_vec();
     let string = format!("{:08X}", data.len());
     let hex_len = string.as_bytes();
     full_cmd.extend_from_slice(hex_len);
 
-    let header = transfer(usb, buffer, &mut full_cmd)?;
+    let header = output_input_bulk(usb, buffer, &mut full_cmd)?;
     if header != FastbootHeader::Data {
         return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Expected DATA header, received {:?}", header)).into());
     }
@@ -189,7 +209,7 @@ pub fn fastboot_download(usb: &mut UsbInterfaces, buffer: &mut Vec<u8>, data: &[
         return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Expected {:?}, received {:?}", hex_len, buffer)).into());
     }
 
-    let header = transfer(usb, buffer, data)?;
+    let header = output_input_bulk(usb, buffer, data)?;
     if header != FastbootHeader::Okay {
         return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Expected OKAY header, received {:?}", header)).into());
     }
@@ -197,30 +217,22 @@ pub fn fastboot_download(usb: &mut UsbInterfaces, buffer: &mut Vec<u8>, data: &[
     Ok(())
 }
 
-pub fn transfer(usb: &mut UsbInterfaces, buffer: &mut Vec<u8>, var: &[u8]) -> Result<FastbootHeader, Box<dyn Error>> {
+pub fn output_input_bulk(usb: &mut UsbInterfaces, buffer: &mut Vec<u8>, var: &[u8]) -> Result<FastbootHeader, Box<dyn Error>> {
     output_bulk(usb, var)?;
     get_reply(usb, buffer)
 }
 
 pub fn getvar_u32(usb: &mut UsbInterfaces, buffer: &mut Vec<u8>, var: &[u8], default: u32) -> u32 {
-    buffer.clear();
-
-    if let Err(e) = output_bulk(usb, var) {
-        error!("{}", e);
-        return default;
-    }
-
-    match get_reply(usb, buffer) {
-        Ok(reply) => if reply == FastbootHeader::Fail {
-            return default;
+    match output_input_bulk(usb, buffer, var) {
+        Ok(header) => if header == FastbootHeader::Okay {
+            return u32_from_bytes(buffer)
         }
         Err(e) => {
             error!("{}", e);
-            return default;
+            error!("Failed to execute command: {}", str::from_utf8(var).unwrap());
         }
     }
-
-    u32_from_bytes(buffer)
+    default
 }
 
 pub fn get_reply(stuff: &mut UsbInterfaces, reply: &mut Vec<u8>) -> Result<FastbootHeader, Box<dyn Error>> {

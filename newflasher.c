@@ -246,35 +246,6 @@ void fread_unus_res(void *ptr, size_t size, size_t nmemb, FILE *stream) {
 	}
 }
 
-unsigned int file_size(char *filename);/* {
-	unsigned int size;
-
-	FILE *fp = fopen(filename, "rb");
-
-	if (fp == NULL) {
-		return 0;
-	}
-
-	fseek(fp, 0, SEEK_END);
-	size = ftell(fp);
-	fseek(fp, 0, SEEK_SET);
-	fclose(fp);
-	return size;
-}*/
-
-static int file_exist(char *file);/* {
-	int ret;
-	FILE *f = NULL;
-
-	if ((f = fopen64(file, "rb")) == NULL) {
-		ret = 0;
-	} else {
-		fclose(f);
-		ret = 1;
-	}
-	return ret;
-}*/
-
 static void remove_file_exist(char *file) {
 	if (file_exist(file)) {
 		remove(file);
@@ -449,8 +420,7 @@ static char *uint16_to_vidpidstring(unsigned short VID, unsigned short PID)
 #endif
 
 static void to_ascii(char *dest, const char *text) {
-	unsigned long int ch;
-	for(; sscanf((const char *)text, "%02lx", &ch)==1; text+=2)
+	for(char ch; sscanf((const char *)text, "%02X", &ch)==1; text+=2)
 		*dest++ = ch;
 	*dest = 0;
 }
@@ -3032,7 +3002,7 @@ int main(int argc, char *argv[])
 	snprintf(sinfil, sizeof(sinfil), "./update.xml");
 #endif
 
-	if (stat(sinfil, &filestat) < 0)
+	if (!file_exist(sinfil))
 	{
 		printf("\nupdate.xml not exist in current folder!\n");
 	}
@@ -3470,45 +3440,43 @@ int main(int argc, char *argv[])
 
 /*=========================================  DEVICE INFO  ============================================*/
 
-	// max_download_size = getvar_u32_ffi(dev, &tmp_reply, "getvar:max-download-size", 0);
-	// getvar_ffi(dev, &tmp_reply, "getvar:product", product, sizeof(product));
-	// getvar_ffi(dev, &tmp_reply, "getvar:version", version, sizeof(version));
-	// getvar_ffi(dev, &tmp_reply, "getvar:version-bootloader", version_bootloader, sizeof(version_bootloader));
-	// getvar_ffi(dev, &tmp_reply, "getvar:version-baseband", version_baseband, sizeof(version_baseband));
-	// getvar_ffi(dev, &tmp_reply, "getvar:serialno", serialno, sizeof(serialno));
-	// getvar_ffi(dev, &tmp_reply, "getvar:secure", secure, sizeof(secure));
-	// sector_size = getvar_u32_ffi(dev, &tmp_reply, "getvar:Sector-size", 4096);
-	// getvar_ffi(dev, &tmp_reply, "getvar:Loader-version", loader_version, sizeof(loader_version));
-	// getvar_ffi(dev, &tmp_reply, "getvar:Phone-id", phone_id, sizeof(phone_id));
-	// getvar_ffi(dev, &tmp_reply, "getvar:Device-id", device_id, sizeof(device_id));
-	// getvar_ffi(dev, &tmp_reply, "getvar:Platform-id", platform_id, sizeof(platform_id));
-	// getvar_ffi(dev, &tmp_reply, "getvar:Rooting-status", rooting_status, sizeof(rooting_status));
-	// getvar_ffi(dev, &tmp_reply, "getvar:Ufs-info", ufs_info, sizeof(ufs_info));
-	// getvar_ffi(dev, &tmp_reply, "getvar:Emmc-info", emmc_info, sizeof(emmc_info));
-	// getvar_ffi(dev, &tmp_reply, "getvar:Default-security", default_security, sizeof(default_security));
-	// keystore_counter = getvar_u32_ffi(dev, &tmp_reply, "getvar:Keystore-counter", 0);
-	// getvar_ffi(dev, &tmp_reply, "getvar:Security-state", security_state, sizeof(security_state));
-	// getvar_ffi(dev, &tmp_reply, "getvar:S1-root", s1_root, sizeof(s1_root));
-	// getvar_ffi(dev, &tmp_reply, "getvar:Sake-root", sake_root, sizeof(sake_root));
+	max_download_size = getvar_u32_ffi(dev, &tmp_reply, "getvar:max-download-size", 0);
+	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:product", product, sizeof(product));
+	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:version", version, sizeof(version));
+	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:version-bootloader", version_bootloader, sizeof(version_bootloader));
+	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:version-baseband", version_baseband, sizeof(version_baseband));
+	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:serialno", serialno, sizeof(serialno));
+	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:secure", secure, sizeof(secure));
+	sector_size = getvar_u32_ffi(dev, &tmp_reply, "getvar:Sector-size", 4096);
+	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:Loader-version", loader_version, sizeof(loader_version));
+	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:Phone-id", phone_id, sizeof(phone_id));
+	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:Device-id", device_id, sizeof(device_id));
+	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:Platform-id", platform_id, sizeof(platform_id));
+	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:Rooting-status", rooting_status, sizeof(rooting_status));
+	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:Ufs-info", ufs_info, sizeof(ufs_info));
+	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:Emmc-info", emmc_info, sizeof(emmc_info));
+	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:Default-security", default_security, sizeof(default_security));
+	keystore_counter = getvar_u32_ffi(dev, &tmp_reply, "getvar:Keystore-counter", 0);
+	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:Security-state", security_state, sizeof(security_state));
+	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:S1-root", s1_root, sizeof(s1_root));
+	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:Sake-root", sake_root, sizeof(sake_root));
 
 	// this is also writing the key into tmp_reply, so we can convert it into hex in get_root_key_hash after
-	// getvar_ffi(dev, &tmp_reply, "Get-root-key-hash", get_root_key_hash, sizeof(get_root_key_hash));
-	// memset(get_root_key_hash, 0, sizeof(get_root_key_hash));
-	//
-	// for (i=0, j=0; i < (int) tmp_reply.len; ++i, j+=2) {
-	// 	sprintf(get_root_key_hash+j, "%02X", tmp_reply.ptr[i] & 0xff);
-	// }
-	// get_root_key_hash[j] = '\0';
+	fastboot_cmd_ffi(dev, &tmp_reply, "Get-root-key-hash", get_root_key_hash, sizeof(get_root_key_hash));
+	memset(get_root_key_hash, 0, sizeof(get_root_key_hash));
 
-	// TODO: this is also broken probably because I didnt read another time before this
-	// getvar_ffi(dev, &tmp_reply, "getvar:slot-count", slot_count, sizeof(slot_count));
-	//
-	// if (slot_count[0] != 0) {
-	// 	getvar_ffi(dev, &tmp_reply, "getvar:current-slot", current_slot, sizeof(current_slot));
-	// }
-	//
-	// // TODO: it seems battery level doesnt always have a prefix
-	// battery_level = getvar_u32_ffi(dev, &tmp_reply, "getvar:Battery", 0);
+	for (i=0, j=0; i < (int) tmp_reply.len; ++i, j+=2) {
+		sprintf(get_root_key_hash+j, "%02X", tmp_reply.ptr[i] & 0xff);
+	}
+	get_root_key_hash[j] = '\0';
+
+	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:slot-count", slot_count, sizeof(slot_count));
+
+	if (slot_count[0] != 0) {
+		fastboot_cmd_ffi(dev, &tmp_reply, "getvar:current-slot", current_slot, sizeof(current_slot));
+	}
+
+	battery_level = getvar_u32_ffi(dev, &tmp_reply, "getvar:Battery", 0);
 
 	printf("Product: %s\n", product);
 	printf("Version: %s\n", version);
@@ -3535,110 +3503,32 @@ int main(int argc, char *argv[])
 	printf("Current slot: %s\n", current_slot);
 	printf("Battery level: %d%s\n", battery_level, (battery_level == 0) ? " unsupported command" : "");
 
-	// if (battery_level > 0)
-	// {
-	// 	if (battery_level < 15)
-	// 	{
-	// 		printf("\nYour battery level is %d percent and you have risk for hard brick in case your battery get fully discharged durring flash session!\n", battery_level);
-	// 		printf("Type 'y' and press ENTER if you understand the risk, or type 'n' to exit from flashing.\n");
-	// 		if (scanf(" %c", &ch)) { }
-	// 		if (ch == 'n' || ch == 'N')
-	// 		{
-	// 			goto endflashing;
-	// 		}
-	// 	}
-	// }
-	//
-	// if (slot_count[0] == '2')
-	// {
-	// 	/* flash bootloader,bluetooth,dsp,modem,rdimage to booth a,b slots */
-	// 	flash_booth_slots = true;
-	// }
+	if (battery_level > 0 && battery_level < 15) {
+		printf("\nYour battery level is %d percent and you have risk for hard brick in case your battery get fully discharged durring flash session!\n", battery_level);
+		printf("Type 'y' and press ENTER if you understand the risk, or type 'n' to exit from flashing.\n");
+		if (scanf(" %c", &ch)) { }
+		if (ch == 'n' || ch == 'N')
+		{
+			goto endflashing;
+		}
+	}
+
+	/* flash bootloader,bluetooth,dsp,modem,rdimage to booth a,b slots */
+	flash_booth_slots = slot_count[0] == '2';
 
 /*======================================  put into flash mode  =======================================*/
 
 	printf("\n");
 
-	// TODO: broken
-	if (transfer_bulk_ffi(dev, EP_OUT, "download:00000001", 17, 1) < 1) {
-		printf("Error writing command 'go into flashmode'!\n");
+	if (!fastboot_download_ffi(dev, &tmp_reply, "\x01", 1)) {
+		printf(" - Error entering flash mode!\n");
 		ret = 1;
 		goto endflashing;
 	}
 
-	if (!get_reply_ffi(dev, &tmp_reply, 0))
-	{
-		printf(" - Error, no go_into_flash_mode DATA reply!\n");
-		ret = 1;
-		goto endflashing;
-	}
-
-	if (strlen(tmp_reply.ptr) != 12)
-	{
-		printf(" - Error, go_into_flash_mode DATA reply size: %zu less than expected: 12!\n", strlen(tmp_reply.ptr));
-		ret = 1;
-		goto endflashing;
-	}
-
-	if (memcmp(tmp_reply.ptr+4, "00000001", 8) != 0)
-	{
-		printf(" - Error, go_into_flash_mode DATA reply string: %s is not equal to expected: DATA00000001!\n", tmp_reply.ptr);
-		ret = 1;
-		goto endflashing;
-	}
-
-	if (transfer_bulk_ffi(dev, EP_OUT, "\x01", 1, 1) < 1)
-	{
-		printf(" - Error writing 'go into flashmode' value 1!\n");
-		ret = 1;
-		goto endflashing;
-	}
-
-	if (!get_reply_ffi(dev, &tmp_reply, 0))
-	{
-		printf("      Error, no 'go into flashmode' OKAY reply!\n");
-		ret = 1;
-		goto endflashing;
-	}
-
-	if (strlen(tmp_reply.ptr) < 4)
-	{
-		printf("      Error, 'go into flashmode' reply less than 4, got: %zu bytes!\n", strlen(tmp_reply.ptr));
-		ret = 1;
-		goto endflashing;
-	}
-
-	if (memcmp(tmp_reply.ptr, "OKAY", 4) != 0)
-	{
-		printf("      Error, didn't got 'go into flashmode' OKAY reply! Got reply: %s\n", tmp_reply.ptr);
-		ret = 1;
-		goto endflashing;
-	}
-
-	if (transfer_bulk_ffi(dev, EP_OUT, "Write-TA:2:10100", 16, 1) < 1)
+	if (!fastboot_cmd_ffi(dev, &tmp_reply, "Write-TA:2:10100", NULL, 0))
 	{
 		printf("Error writing TA 'go into flashmode'!\n");
-		ret = 1;
-		goto endflashing;
-	}
-
-	if (!get_reply_ffi(dev, &tmp_reply, 0))
-	{
-		printf("      Error, no TA write 'go into flashmode' OKAY reply!\n");
-		ret = 1;
-		goto endflashing;
-	}
-
-	if (strlen(tmp_reply.ptr) < 4)
-	{
-		printf("      Error, TA write 'go into flashmode' reply less than 4, got: %zu bytes!\n", strlen(tmp_reply.ptr));
-		ret = 1;
-		goto endflashing;
-	}
-
-	if (memcmp(tmp_reply.ptr, "OKAY", 4) != 0)
-	{
-		printf("      Error, didn't got TA write 'go into flashmode' OKAY reply! Got reply: %s\n", tmp_reply.ptr);
 		ret = 1;
 		goto endflashing;
 	}
