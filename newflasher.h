@@ -19,9 +19,7 @@ enum FastbootReply {
     FR_FAIL,
 };
 
-struct usb_handle
-{
-    char fname[64];
+struct usb_handle {
     int desc;
     unsigned char ep_in;
     unsigned char ep_out;
@@ -30,7 +28,8 @@ struct usb_handle
 
 typedef struct usb_handle *HANDLE;
 
-void getvar_ffi(HANDLE handle, struct RustVec *cvec, const char *var, char* str_buf, size_t len);
+void getvar_ffi(HANDLE handle, struct RustVec *cvec, const char *var, char *str_buf, size_t len);
+
 uint32_t getvar_u32_ffi(HANDLE handle, struct RustVec *cvec, const char *var, uint32_t fallback);
 
 #endif //NEWFLASHER_H
