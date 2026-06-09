@@ -56,11 +56,12 @@ mod tests {
     }
 
     #[test]
-    fn test_fastboot_download() {
+    fn test_fastboot_flashmode() {
         let mut usb = get_device().lock().unwrap();
         let mut vec = Vec::<u8>::new();
 
-        fastboot_download(&mut usb, &mut vec, &[0u8]).unwrap();
+        assert!(fastboot_download(&mut usb, &mut vec, &[0u8]).is_ok());
+        assert!(fastboot_cmd(&mut usb, &mut vec, b"Write-TA:2:10100").is_ok());
     }
 
     #[test]

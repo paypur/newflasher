@@ -28,7 +28,17 @@ struct usb_handle {
 
 typedef struct usb_handle *HANDLE;
 
-void getvar_ffi(HANDLE handle, struct RustVec *cvec, const char *var, char *str_buf, size_t len);
+unsigned int file_size(char *filename);
+
+static int file_exist(char *file);
+
+static void remove_file_exist(char *file);
+
+void trim(char *ptr);
+
+bool fastboot_cmd_ffi(HANDLE handle, struct RustVec *cvec, const char *var, char *str_buf, size_t len);
+
+bool fastboot_download_ffi(HANDLE handle, struct RustVec *cvec, const char *data, size_t len);
 
 uint32_t getvar_u32_ffi(HANDLE handle, struct RustVec *cvec, const char *var, uint32_t fallback);
 
