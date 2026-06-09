@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use std::ffi::{c_char, CStr};
+    use std::sync::{Mutex, OnceLock};
     use crate::*;
 
     unsafe extern "C" {
@@ -13,19 +14,16 @@ mod tests {
     const VID: u16 = 0x0FCE;
     const PID: u16 = 0xB00B;
 
-    fn reply_str<'a>(buffer: &'a mut Vec<u8>, usb: &mut UsbInterfaces, var: &[u8]) -> &'a str {
-        if let Err(e) = fastboot_cmd(usb, buffer, var) {
-            error!("{}", e);
-            return "";
-        };
+    static DEVICE: OnceLock<Mutex<UsbInterfaces>> = OnceLock::new();
 
-        str::from_utf8(buffer).expect(&format!("Failed to parse {:?} as str", buffer.as_slice()))
+    fn get_device() -> &'static Mutex<UsbInterfaces> {
+        DEVICE.get_or_init(|| Mutex::new(get_flash_mode_rs(VID, PID)))
     }
 
     // https://android.googlesource.com/platform/system/core/+/master/fastboot/README.md
     #[test]
     fn test_fastboot_vars() {
-        let mut usb = get_flash_mode_rs(VID, PID);
+        let mut usb = get_device().lock().unwrap();
         let mut vec = Vec::<u8>::with_capacity(1024);
 
         assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:max-download-size").parse::<u32>().unwrap(), 805306368);
@@ -57,21 +55,13 @@ mod tests {
         assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:Battery"), "Battery not supported");
     }
 
-    // #[test]
-    // fn test_fastboot_download() {
-    //     let mut vec = Vec::<u8>::new();
-    //     let mut usb = get_flash_mode_rs(VID, PID);
-    //
-    //     assert_eq!(check_reply(&mut vec, &mut usb, b"getvar:max-download-size").parse::<u32>().unwrap(), 805306368);
-    //
-    //     output_bulk(&mut usb, b"download:00000001").unwrap();
-    //
-    //     // let mut buf = [0u8; 12];
-    //     vec.resize(12, 0);
-    //     usb.reader.read_exact(vec.as_mut()).unwrap();
-    //
-    //     assert_eq!(str::from_utf8(&vec).expect(&format!("Failed to parse {:?} as str", vec)), "DATA00000001");
-    // }
+    #[test]
+    fn test_fastboot_download() {
+        let mut usb = get_device().lock().unwrap();
+        let mut vec = Vec::<u8>::new();
+
+        fastboot_download(&mut usb, &mut vec, &[0u8]).unwrap();
+    }
 
     #[test]
     fn test_files() {
@@ -129,4 +119,14 @@ mod tests {
             assert_eq!(is_end_of_archive(arr.as_ptr()), 0);
         }
     }
+
+    fn reply_str<'a>(buffer: &'a mut Vec<u8>, usb: &mut UsbInterfaces, var: &[u8]) -> &'a str {
+        if let Err(e) = fastboot_cmd(usb, buffer, var) {
+            error!("{}", e);
+            return "";
+        };
+
+        str::from_utf8(buffer).expect(&format!("Failed to parse {:?} as str", buffer.as_slice()))
+    }
+
 }
