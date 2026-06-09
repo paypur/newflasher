@@ -984,9 +984,8 @@ static unsigned long transfer_bulk_async(HANDLE dev, int ep, char *bytes, unsign
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #else
-static unsigned long transfer_input_bulk(struct usb_handle *h, struct RustVec, int exact);
 
-static unsigned long transfer_bulk_ffi(struct usb_handle *h, int ep, const void *_bytes, unsigned long size, int timeout, int exact);
+static unsigned long transfer_bulk_ffi(struct usb_handle *h, int ep, const void *_bytes, unsigned long size, int exact);
 /*{
 	char *bytes = (char *)_bytes;
 	unsigned long count = 0;
@@ -1735,7 +1734,7 @@ repeat_here:
 			snprintf(command, sizeof(command), "%s:%08x", is_2021_device ? "download" : "signature", fp_size);
 			printf("      %s\n", command);
 
-			if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1) {
+			if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), 1) < 1) {
 				printf("      Error writing signature command!\n");
 				return 0;
 			}
@@ -1799,7 +1798,7 @@ repeat_here:
 
 			fclose(fp);
 
-			if (transfer_bulk_ffi(dev, EP_OUT, buffer, fp_size, USB_TIMEOUT, 1) < 1) {
+			if (transfer_bulk_ffi(dev, EP_OUT, buffer, fp_size, 1) < 1) {
 				printf("      Error writing signature!\n");
 				if (buffer) free(buffer);
 				return 0;
@@ -1831,7 +1830,7 @@ repeat_here:
 				snprintf(command, sizeof(command), "signature");
 				printf("      %s\n", command);
 
-				if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1)
+				if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), 1) < 1)
 				{
 					printf("      Error writing signature command!\n");
 					return 0;
@@ -1874,7 +1873,7 @@ repeat_here:
 			snprintf(command, sizeof(command), "download:%08x", fp_size);
 			printf("      %s\n", command);
 
-			if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1) {
+			if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), 1) < 1) {
 				printf("      Error writing download command!\n");
 				return 0;
 			}
@@ -1934,7 +1933,7 @@ repeat_here:
 					}
 				}
 
-				if (transfer_bulk_ffi(dev, EP_OUT, buffer, fp_read, USB_TIMEOUT, 1) < 1) {
+				if (transfer_bulk_ffi(dev, EP_OUT, buffer, fp_read, 1) < 1) {
 					printf("         Error uploading chunk %d!\n", g);
 					fclose(fp);
 					if (buffer) free(buffer);
@@ -1971,7 +1970,7 @@ repeat_here:
 					if (memcmp(current_slot, "a", 1) == 0 || memcmp(current_slot, "b", 1) == 0)
 					{
 						snprintf(command, sizeof(command), "getvar:has-slot:%s", flashfile);
-						if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1) {
+						if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), 1) < 1) {
 							printf(" - Error writing command %s!\n", command);
 							return 0;
 						}
@@ -2019,7 +2018,7 @@ repeat_here:
 
 					printf("      %s\n", command);
 
-					if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1) {
+					if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), 1) < 1) {
 						printf("      Error writing %s!\n", command);
 						return 0;
 					}
@@ -2081,7 +2080,7 @@ repeat_here:
 				printf("      %s\n", command);
 			}
 
-			if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1) {
+			if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), 1) < 1) {
 				printf("      Error writing %s!\n", command);
 				return 0;
 			}
@@ -2529,7 +2528,7 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 						snprintf(command, sizeof(command), "download:%08x", unit_sz);
 						printf("      %s\n", command);
 
-						if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1) {
+						if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), 1) < 1) {
 							printf("      Error writing download command!\n");
 							ret = 0;
 							goto finish_proced_ta;
@@ -2555,7 +2554,7 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 
 						if (unit_sz > 0)
 						{
-							if (transfer_bulk_ffi(dev, EP_OUT, unit_data, unit_sz, USB_TIMEOUT, 1) < 1) {
+							if (transfer_bulk_ffi(dev, EP_OUT, unit_data, unit_sz, 1) < 1) {
 								printf("      Error writing unit data!\n");
 								ret = 0;
 								goto finish_proced_ta;
@@ -2585,7 +2584,7 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 						snprintf(command, sizeof(command), "Write-TA:%u:%u", partition, unit_dec);
 						printf("      %s\n", command);
 
-						if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), USB_TIMEOUT, 1) < 1) {
+						if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), 1) < 1) {
 							printf("      Error writing command WriteTA!\n");
 							ret = 0;
 							goto finish_proced_ta;
@@ -3095,7 +3094,7 @@ int main(int argc, char *argv[])
 	/* TODO:
 	if (argc > 1)
 	{
-		if (transfer_bulk_ffi(dev, EP_OUT, argv[1], strlen(argv[1]), USB_TIMEOUT, 1) < 1)
+		if (transfer_bulk_ffi(dev, EP_OUT, argv[1], strlen(argv[1]), 1) < 1)
 		{
 			printf("Error writing commad: %s\n", argv[1]);
 			ret = 1;
@@ -3239,7 +3238,7 @@ int main(int argc, char *argv[])
 		{
 			snprintf(tmp, sizeof(tmp), "Read-all-TA:%d", i);
 
-			if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+			if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), 1) < 1)
 			{
 				printf("Error dumping trimarea partition %d !!\n", i);
 				ret = 1;
@@ -3471,101 +3470,45 @@ int main(int argc, char *argv[])
 
 /*=========================================  DEVICE INFO  ============================================*/
 
-	max_download_size = getvar_u32_ffi(dev, &tmp_reply, "getvar:max-download-size", 0);
-	getvar_ffi(dev, &tmp_reply, "getvar:product", product, sizeof(product));
-	getvar_ffi(dev, &tmp_reply, "getvar:version", version, sizeof(version));
-	getvar_ffi(dev, &tmp_reply, "getvar:version-bootloader", version_bootloader, sizeof(version_bootloader));
-	getvar_ffi(dev, &tmp_reply, "getvar:version-baseband", version_baseband, sizeof(version_baseband));
-	getvar_ffi(dev, &tmp_reply, "getvar:serialno", serialno, sizeof(serialno));
-	getvar_ffi(dev, &tmp_reply, "getvar:secure", secure, sizeof(secure));
-	sector_size = getvar_u32_ffi(dev, &tmp_reply, "getvar:Sector-size", 4096);
-	getvar_ffi(dev, &tmp_reply, "getvar:Loader-version", loader_version, sizeof(loader_version));
-	getvar_ffi(dev, &tmp_reply, "getvar:Phone-id", phone_id, sizeof(phone_id));
-	getvar_ffi(dev, &tmp_reply, "getvar:Device-id", device_id, sizeof(device_id));
-	getvar_ffi(dev, &tmp_reply, "getvar:Platform-id", platform_id, sizeof(platform_id));
-	getvar_ffi(dev, &tmp_reply, "getvar:Rooting-status", rooting_status, sizeof(rooting_status));
-	getvar_ffi(dev, &tmp_reply, "getvar:Ufs-info", ufs_info, sizeof(ufs_info));
-	getvar_ffi(dev, &tmp_reply, "getvar:Emmc-info", emmc_info, sizeof(emmc_info));
-	getvar_ffi(dev, &tmp_reply, "getvar:Default-security", default_security, sizeof(default_security));
-	keystore_counter = getvar_u32_ffi(dev, &tmp_reply, "getvar:Keystore-counter", 0);
-	getvar_ffi(dev, &tmp_reply, "getvar:Security-state", security_state, sizeof(security_state));
-	getvar_ffi(dev, &tmp_reply, "getvar:S1-root", s1_root, sizeof(s1_root));
-	getvar_ffi(dev, &tmp_reply, "getvar:Sake-root", sake_root, sizeof(sake_root));
-	// getvar_ffi(dev, tmp_reply, "Get-root-key-hash", sake_root, sizeof(sake_root));
+	// max_download_size = getvar_u32_ffi(dev, &tmp_reply, "getvar:max-download-size", 0);
+	// getvar_ffi(dev, &tmp_reply, "getvar:product", product, sizeof(product));
+	// getvar_ffi(dev, &tmp_reply, "getvar:version", version, sizeof(version));
+	// getvar_ffi(dev, &tmp_reply, "getvar:version-bootloader", version_bootloader, sizeof(version_bootloader));
+	// getvar_ffi(dev, &tmp_reply, "getvar:version-baseband", version_baseband, sizeof(version_baseband));
+	// getvar_ffi(dev, &tmp_reply, "getvar:serialno", serialno, sizeof(serialno));
+	// getvar_ffi(dev, &tmp_reply, "getvar:secure", secure, sizeof(secure));
+	// sector_size = getvar_u32_ffi(dev, &tmp_reply, "getvar:Sector-size", 4096);
+	// getvar_ffi(dev, &tmp_reply, "getvar:Loader-version", loader_version, sizeof(loader_version));
+	// getvar_ffi(dev, &tmp_reply, "getvar:Phone-id", phone_id, sizeof(phone_id));
+	// getvar_ffi(dev, &tmp_reply, "getvar:Device-id", device_id, sizeof(device_id));
+	// getvar_ffi(dev, &tmp_reply, "getvar:Platform-id", platform_id, sizeof(platform_id));
+	// getvar_ffi(dev, &tmp_reply, "getvar:Rooting-status", rooting_status, sizeof(rooting_status));
+	// getvar_ffi(dev, &tmp_reply, "getvar:Ufs-info", ufs_info, sizeof(ufs_info));
+	// getvar_ffi(dev, &tmp_reply, "getvar:Emmc-info", emmc_info, sizeof(emmc_info));
+	// getvar_ffi(dev, &tmp_reply, "getvar:Default-security", default_security, sizeof(default_security));
+	// keystore_counter = getvar_u32_ffi(dev, &tmp_reply, "getvar:Keystore-counter", 0);
+	// getvar_ffi(dev, &tmp_reply, "getvar:Security-state", security_state, sizeof(security_state));
+	// getvar_ffi(dev, &tmp_reply, "getvar:S1-root", s1_root, sizeof(s1_root));
+	// getvar_ffi(dev, &tmp_reply, "getvar:Sake-root", sake_root, sizeof(sake_root));
 
-//  TODO: replace this
-	snprintf(tmp, sizeof(tmp), "Get-root-key-hash");
-	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
-	{
-		printf(" - Error writing command %s!\n", tmp);
-		ret = 1;
-		goto endflashing;
-	}
-
-	if (get_reply_ffi(dev, &tmp_reply, 0) != FR_DATA)
-	{
-		printf(" - Error, no DATA reply!\n");
-		ret = 1;
-		goto endflashing;
-	}
-
-	// actual data
-	if (!get_reply_ffi(dev, &tmp_reply, 0))
-	{
-		ret = 1;
-		goto endflashing;
-	}
-
-	memset(get_root_key_hash, 0, sizeof(get_root_key_hash));
-
-	if (tmp_reply.len <= 0)
-	{
-		printf("Error receiving root key hash!\n");
-		ret = 1;
-		goto endflashing;
-	}
-
-	// // sometimes OKAY reply is inside data buffer
-	// if (get_reply_len >= 4 && tmp_reply.ptr[get_reply_len - 4] == 'O' && tmp_reply.ptr[get_reply_len - 3] == 'K' && tmp_reply.ptr[get_reply_len - 2] == 'A' && tmp_reply.ptr[get_reply_len - 1] == 'Y')
-	// {
-	// 	get_reply_len -= 4;
-	// 	okay_replied = true;
-	// }
-
-	for (i=0, j=0; i < (int) tmp_reply.len; ++i, j+=2)
-	{
-		sprintf(get_root_key_hash+j, "%02X", tmp_reply.ptr[i] & 0xff);
-	}
-	get_root_key_hash[j] = '\0';
-
-	// TODO: handle error
-	// if (!okay_replied)
-	// {
-	// 	if (!get_reply_ffi(dev, &tmp_reply, 0))
-	// 	{
-	// 		ret = 1;
-	// 		goto endflashing;
-	// 	}
+	// this is also writing the key into tmp_reply, so we can convert it into hex in get_root_key_hash after
+	// getvar_ffi(dev, &tmp_reply, "Get-root-key-hash", get_root_key_hash, sizeof(get_root_key_hash));
+	// memset(get_root_key_hash, 0, sizeof(get_root_key_hash));
 	//
-	// 	if (memcmp(tmp_reply.ptr, "OKAY", 4) != 0)
-	// 	{
-	// 		printf(" - Error, no OKAY reply!\n");
-	// 		ret = 1;
-	// 		goto endflashing;
-	// 	}
+	// for (i=0, j=0; i < (int) tmp_reply.len; ++i, j+=2) {
+	// 	sprintf(get_root_key_hash+j, "%02X", tmp_reply.ptr[i] & 0xff);
 	// }
-
-	okay_replied = false;
+	// get_root_key_hash[j] = '\0';
 
 	// TODO: this is also broken probably because I didnt read another time before this
-	getvar_ffi(dev, &tmp_reply, "getvar:slot-count", slot_count, sizeof(slot_count));
-
-	if (slot_count[0] != 0) {
-		getvar_ffi(dev, &tmp_reply, "getvar:current-slot", current_slot, sizeof(current_slot));
-	}
-
-	// TODO: it seems battery level doesnt always have a prefix
-	battery_level = getvar_u32_ffi(dev, &tmp_reply, "getvar:Battery", 0);
+	// getvar_ffi(dev, &tmp_reply, "getvar:slot-count", slot_count, sizeof(slot_count));
+	//
+	// if (slot_count[0] != 0) {
+	// 	getvar_ffi(dev, &tmp_reply, "getvar:current-slot", current_slot, sizeof(current_slot));
+	// }
+	//
+	// // TODO: it seems battery level doesnt always have a prefix
+	// battery_level = getvar_u32_ffi(dev, &tmp_reply, "getvar:Battery", 0);
 
 	printf("Product: %s\n", product);
 	printf("Version: %s\n", version);
@@ -3592,31 +3535,32 @@ int main(int argc, char *argv[])
 	printf("Current slot: %s\n", current_slot);
 	printf("Battery level: %d%s\n", battery_level, (battery_level == 0) ? " unsupported command" : "");
 
-	if (battery_level > 0)
-	{
-		if (battery_level < 15)
-		{
-			printf("\nYour battery level is %d percent and you have risk for hard brick in case your battery get fully discharged durring flash session!\n", battery_level);
-			printf("Type 'y' and press ENTER if you understand the risk, or type 'n' to exit from flashing.\n");
-			if (scanf(" %c", &ch)) { }
-			if (ch == 'n' || ch == 'N')
-			{
-				goto endflashing;
-			}
-		}
-	}
-
-	if (slot_count[0] == '2')
-	{
-		/* flash bootloader,bluetooth,dsp,modem,rdimage to booth a,b slots */
-		flash_booth_slots = true;
-	}
+	// if (battery_level > 0)
+	// {
+	// 	if (battery_level < 15)
+	// 	{
+	// 		printf("\nYour battery level is %d percent and you have risk for hard brick in case your battery get fully discharged durring flash session!\n", battery_level);
+	// 		printf("Type 'y' and press ENTER if you understand the risk, or type 'n' to exit from flashing.\n");
+	// 		if (scanf(" %c", &ch)) { }
+	// 		if (ch == 'n' || ch == 'N')
+	// 		{
+	// 			goto endflashing;
+	// 		}
+	// 	}
+	// }
+	//
+	// if (slot_count[0] == '2')
+	// {
+	// 	/* flash bootloader,bluetooth,dsp,modem,rdimage to booth a,b slots */
+	// 	flash_booth_slots = true;
+	// }
 
 /*======================================  put into flash mode  =======================================*/
 
 	printf("\n");
 
-	if (transfer_bulk_ffi(dev, EP_OUT, "download:00000001", 17, USB_TIMEOUT, 1) < 1) {
+	// TODO: broken
+	if (transfer_bulk_ffi(dev, EP_OUT, "download:00000001", 17, 1) < 1) {
 		printf("Error writing command 'go into flashmode'!\n");
 		ret = 1;
 		goto endflashing;
@@ -3643,7 +3587,7 @@ int main(int argc, char *argv[])
 		goto endflashing;
 	}
 
-	if (transfer_bulk_ffi(dev, EP_OUT, "\x01", 1, USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, "\x01", 1, 1) < 1)
 	{
 		printf(" - Error writing 'go into flashmode' value 1!\n");
 		ret = 1;
@@ -3671,7 +3615,7 @@ int main(int argc, char *argv[])
 		goto endflashing;
 	}
 
-	if (transfer_bulk_ffi(dev, EP_OUT, "Write-TA:2:10100", 16, USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, "Write-TA:2:10100", 16, 1) < 1)
 	{
 		printf("Error writing TA 'go into flashmode'!\n");
 		ret = 1;
@@ -3748,7 +3692,7 @@ int main(int argc, char *argv[])
 
 			snprintf(tmp, sizeof(tmp), "%s", have_ufs ? "Get-ufs-info" : "Get-emmc-info");
 
-			if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+			if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), 1) < 1)
 			{
 				printf(" - Error writing command %s!\n", tmp);
 				ret = 1;
@@ -4618,7 +4562,7 @@ getoutofflashing:
 /*=========================================    bootloader log    ========================================*/
 
 	snprintf(tmp, sizeof(tmp), "Getlog");
-	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), 1) < 1)
 	{
 		printf("Error writing commad: %s\n", tmp);
 		ret = 1;
@@ -4733,7 +4677,7 @@ getoutofflashing:
 /*=========================================  firmwares history log    ========================================*/
 
 	snprintf(tmp, sizeof(tmp), "Read-TA:2:2475");
-	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), 1) < 1)
 	{
 		printf("Error writing commad: %s\n", tmp);
 		ret = 1;
@@ -4855,7 +4799,7 @@ slot_setup:
 	{
 		snprintf(tmp, sizeof(tmp), "set_active:%s", current_slot);
 
-		if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+		if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), 1) < 1)
 		{
 				printf("Error writing command '%s'!\n", tmp);
 				ret = 1;
@@ -4890,7 +4834,7 @@ slot_setup:
 
 	printf("\n");
 
-	if (transfer_bulk_ffi(dev, EP_OUT, "download:00000001", 17, USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, "download:00000001", 17, 1) < 1)
 	{
 		printf("Error writing command 'go out of flashmode'!\n");
 		ret = 1;
@@ -4918,7 +4862,7 @@ slot_setup:
 		goto endflashing;
 	}
 
-	if (transfer_bulk_ffi(dev, EP_OUT, "\x00", 1, USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, "\x00", 1, 1) < 1)
 	{
 		printf(" - Error writing 'go out of flashmode' value 0!\n");
 		ret = 1;
@@ -4946,7 +4890,7 @@ slot_setup:
 		goto endflashing;
 	}
 
-	if (transfer_bulk_ffi(dev, EP_OUT, "Write-TA:2:10100", 16, USB_TIMEOUT, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, "Write-TA:2:10100", 16, 1) < 1)
 	{
 		printf("Error writing TA 'go out of flashmode'!\n");
 		ret = 1;
@@ -4983,7 +4927,7 @@ endflashing:
 	if (something_flashed)
 	{
 		snprintf(tmp, sizeof(tmp), "Sync");
-		if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), USB_TIMEOUT, 1) < 1)
+		if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), 1) < 1)
 		{
 			printf(" - Error writing command %s!\n", tmp);
 			ret = 1;
@@ -5033,7 +4977,7 @@ endflashing:
 		}
 
 retry:
-		if (transfer_bulk_ffi(dev, EP_OUT, reboot_string, strlen(reboot_string), USB_TIMEOUT, 1) < 1)
+		if (transfer_bulk_ffi(dev, EP_OUT, reboot_string, strlen(reboot_string), 1) < 1)
 		{
 			printf(" - Error writing command %s!\n", reboot_string);
 			ret = 1;
