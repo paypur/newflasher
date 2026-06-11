@@ -6,10 +6,10 @@ mod sins;
 use nusb::{Device, Interface, MaybeFuture};
 use std::ffi::{c_char, c_ushort, CStr};
 
-use std::{io, ptr, slice};
-use std::cmp::min;
-use log::error;
 use crate::types::*;
+use log::error;
+use std::cmp::min;
+use std::{io, ptr, slice};
 
 // C globals and functions
 unsafe extern "C" {
@@ -29,9 +29,7 @@ fn from_cvec(cvec: &ByteVec) -> Vec<u8> {
     vec![]
 }
 
-fn return_vec(cvec: &mut ByteVec, vec: Vec<u8>) {
-
-}
+fn return_vec(cvec: &mut ByteVec, vec: Vec<u8>) {}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn get_flash_mode(vid: c_ushort, pid: c_ushort) -> *mut FastbootDevice {
@@ -61,20 +59,20 @@ pub extern "C" fn transfer_bulk_ffi(unsafe_handle: *mut FastbootDevice, ep: i32,
     match ep {
         0 => {
             let mut vec = unsafe { Vec::from_raw_parts(chars, len, capacity) };
-            let res = handle.input_bulk();
+            let res = handle.transfer_in();
             let _ = vec.into_raw_parts(); // make sure rust doesnt drop this
             res
         },
-        1 => handle.output_bulk(unsafe { slice::from_raw_parts(chars, len) }),
+        1 => handle.transfer_out(unsafe { slice::from_raw_parts(chars, len) }),
         _ => panic!("Invalid endpoint direction: {:?}", ep)
-    }.unwrap_or_else(|_| 0)
+    }.unwrap_or(0)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn get_reply_ffi(unsafe_handle: *mut FastbootDevice, cvec: &mut ByteVec, exact: i32) -> FastbootHeader {
     let handle = unsafe { &mut *unsafe_handle };
     let mut vec = from_cvec(cvec);
-    let res = handle.get_reply();
+    let res = handle.read_reply();
     return_vec(cvec, vec);
     res.unwrap_or_else(|_| FastbootHeader::Error)
 }
