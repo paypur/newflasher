@@ -1,10 +1,14 @@
 #[cfg(test)]
 mod tests {
-    use crate::utils::{parseoct, trim_rs};
     use crate::utils::{file_exist, file_size};
-    use std::ffi::{c_char};
-    use std::sync::{Mutex, OnceLock};
+    use crate::utils::{parseoct, trim_rs};
     use crate::*;
+    use std::ffi::c_char;
+    use std::fs::File;
+    use std::io::Read;
+    use std::sync::{Mutex, OnceLock};
+    use tar::Archive;
+    use crate::sins::{transfer_cms};
 
     unsafe extern "C" {
         pub fn is_end_of_archive(p: *const u8) -> i32;
@@ -59,8 +63,20 @@ mod tests {
     fn test_fastboot_flashmode() {
         let mut usb = get_device().lock().unwrap();
 
-        assert!(usb.download(&[0u8]).is_ok());
-        assert!(usb.command(b"Write-TA:2:10100").is_ok());
+        usb.download(&[0u8]).unwrap();
+        usb.command(b"Write-TA:2:10100").unwrap();
+    }
+
+    #[test]
+    fn test_sin_signature() {
+        let mut usb = get_device().lock().unwrap();
+
+        let file = File::open("files/partition-image-LUN0_124936192_X-FLASH-ALL-88DF.sin").unwrap();
+        let mut archive = Archive::new(Box::new(file) as Box<dyn Read>);
+
+        let mut fst = archive.entries().unwrap().nth(0).unwrap().unwrap();
+
+        transfer_cms(&mut usb, &mut fst, "partitionimage_0").unwrap();
     }
 
     #[test]
@@ -96,5 +112,4 @@ mod tests {
 
         str::from_utf8(usb.reply.as_slice()).expect(&format!("Failed to parse {:?} as str", usb.reply.as_slice()))
     }
-
 }
