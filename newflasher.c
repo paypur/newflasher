@@ -1404,7 +1404,7 @@ static int gziper(char *in, char *out)
 }
 #endif
 
-static int gunziper(char *in, char *out)
+int gunziper(char *in, char *out)
 {
 		int ret;
 		FILE *zipped = NULL;
@@ -1437,38 +1437,6 @@ static int gunziper(char *in, char *out)
 		return 0;
 }
 
-/* Parse an octal number, ignoring leading and trailing nonsense. */
-int parseoct(const char *p, size_t n)
-{
-	int i = 0;
-
-	while (*p < '0' || *p > '7') {
-		++p;
-		--n;
-	}
-	while (*p >= '0' && *p <= '7' && n > 0) {
-		i *= 8;
-		i += *p - '0';
-		++p;
-		--n;
-	}
-	return (i);
-}
-
-/* Returns true if this is 512 zero bytes. */
-int is_end_of_archive(const char *p)
-{
-	int n;
-	for (n = 511; n >= 0; --n)
-	{
-		if (p[n] != '\0')
-		{
-			return 0;
-		}
-	}
-	return 1;
-}
-
 /* Create a file, including parent directory as necessary. */
 static FILE *create_file(char *pathname)
 {
@@ -1478,21 +1446,6 @@ static FILE *create_file(char *pathname)
 		return NULL;
 	else
 		return (f);
-}
-
-/* Verify the tar checksum. */
-static int verify_checksum(const char *p)
-{
-	int n, u = 0;
-	for (n = 0; n < 512; ++n) {
-		if (n < 148 || n > 155)
-			/* Standard tar checksum adds unsigned bytes. */
-			u += ((unsigned char *)p)[n];
-		else
-			u += 0x20;
-
-	}
-	return (u == parseoct(p + 148, 8));
 }
 
 static bool keep_userdata = true;
@@ -2751,6 +2704,8 @@ int main(int argc, char *argv[])
 	memset(slot_count, 0x30, sizeof(slot_count));
 	memset(current_slot, 0x30, sizeof(current_slot));
 
+	goto skip;
+
 /*========================================  extract GordonGate  ======================================*/
 #ifdef _WIN32
 	if (argc < 2)
@@ -3016,7 +2971,6 @@ int main(int argc, char *argv[])
 		// }
 	}
 
-	goto skip;
 
 /*============================================  reboot mode ==========================================*/
 
@@ -3436,8 +3390,6 @@ int main(int argc, char *argv[])
 	}
 	*/
 
-	skip:
-
 /*=========================================  DEVICE INFO  ============================================*/
 
 	max_download_size = getvar_u32_ffi(dev, &tmp_reply, "getvar:max-download-size", 0);
@@ -3534,7 +3486,7 @@ int main(int argc, char *argv[])
 	}
 
 	printf("Device is put now in flash mode.\n");
-
+	skip:
 /*=======================================  process partition  ========================================*/
 
 	printf("\n");
@@ -3582,92 +3534,96 @@ int main(int argc, char *argv[])
 
 			snprintf(tmp, sizeof(tmp), "%s", have_ufs ? "Get-ufs-info" : "Get-emmc-info");
 
-			if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), 1) < 1)
-			{
-				printf(" - Error writing command %s!\n", tmp);
-				ret = 1;
-				goto getoutofflashing;
-			}
-			else
-			{
-				if (!get_reply_ffi(dev, &tmp_reply, 0))
-				{
-					ret = 1;
-					goto getoutofflashing;
-				}
 
-				if (memcmp(tmp_reply.ptr, "DATA", 4) != 0)
-				{
-					printf(" - Error, no DATA reply!\n");
-					ret = 1;
-					goto getoutofflashing;
-				}
+			// if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), 1) < 1)
+			// {
+			// 	printf(" - Error writing command %s!\n", tmp);
+			// 	ret = 1;
+			// 	goto getoutofflashing;
+			// }
+			// else
+			// {
+			// 	if (!get_reply_ffi(dev, &tmp_reply, 0))
+			// 	{
+			// 		ret = 1;
+			// 		goto getoutofflashing;
+			// 	}
+			//
+			// 	if (memcmp(tmp_reply.ptr, "DATA", 4) != 0)
+			// 	{
+			// 		printf(" - Error, no DATA reply!\n");
+			// 		ret = 1;
+			// 		goto getoutofflashing;
+			// 	}
+			//
+			// 	if (!get_reply_ffi(dev, &tmp_reply, 0))
+			// 	{
+			// 		ret = 1;
+			// 		goto getoutofflashing;
+			// 	}
+			//
+			// 	if (get_reply_len <= 0)
+			// 	{
+			// 		printf("Error receiving %s header!\n", have_ufs ? "UFS" : "EMMC");
+			// 		ret = 1;
+			// 		goto getoutofflashing;
+			// 	}
+			// 	else
+			// 	{
+					// // if (have_ufs)
+					// // {
+					// 	unsigned char ufs_desc_sz = 0;
+					//
+					// 	display_buffer_hex_ascii("UFS raw data", tmp_reply.ptr, get_reply_len);
+					//
+					// 	memcpy(tmp_reply.ptr, "OKAYKIOXIA,THGJFLT1E45BATPB,0100", 33);
+					//
+					// 	memcpy(&ufs_desc_sz, tmp_reply.ptr, 1);
+					// 	memcpy(&lun0_sz, tmp_reply.ptr + ufs_desc_sz + 0x1c, 4);
+					//
+					// 	lun0_sz = swap_uint32(lun0_sz);
+					// 	lun0_sz *= sector_size;
+					// 	lun0_sz /= 1024;
+					// // }
+					// // else
+					// // {
+					// // 	display_buffer_hex_ascii("EMMC raw data", tmp_reply.ptr, get_reply_len);
+					// //
+					// // 	memcpy(&lun0_sz, tmp_reply.ptr + 0xd4, 4);
+					// //
+					// // 	lun0_sz *= sector_size;
+					// // 	lun0_sz /= 1024;
+					// // }
+					//
+					// printf("%s size = %llu\n", have_ufs ? "LUN0" : "EMMC part 0", lun0_sz);
+			// 	}
+			//
+			// 	// sometimes OKAY reply is inside data buffer
+			// 	if (get_reply_len >= 4 && tmp_reply.ptr[get_reply_len - 4] == 'O' && tmp_reply.ptr[get_reply_len - 3] == 'K' && tmp_reply.ptr[get_reply_len - 2] == 'A' && tmp_reply.ptr[get_reply_len - 1] == 'Y')
+			// 	{
+			// 		get_reply_len -= 4;
+			// 		okay_replied = true;
+			// 	}
+			//
+			// 	if (!okay_replied)
+			// 	{
+			// 		if (!get_reply_ffi(dev, &tmp_reply, 0))
+			// 		{
+			// 			ret = 1;
+			// 			goto getoutofflashing;
+			// 		}
+			//
+			// 		if (memcmp(tmp_reply.ptr, "OKAY", 4) != 0)
+			// 		{
+			// 			printf(" - Error, no OKAY reply!\n");
+			// 			ret = 1;
+			// 			goto getoutofflashing;
+			// 		}
+			// 	}
+			//
+			// 	okay_replied = false;
+			// }
 
-				if (!get_reply_ffi(dev, &tmp_reply, 0))
-				{
-					ret = 1;
-					goto getoutofflashing;
-				}
-
-				if (get_reply_len <= 0)
-				{
-					printf("Error receiving %s header!\n", have_ufs ? "UFS" : "EMMC");
-					ret = 1;
-					goto getoutofflashing;
-				}
-				else
-				{
-					if (have_ufs)
-					{
-						unsigned char ufs_desc_sz = 0;
-
-						display_buffer_hex_ascii("UFS raw data", tmp_reply.ptr, get_reply_len);
-
-						memcpy(&ufs_desc_sz, tmp_reply.ptr, 1);
-						memcpy(&lun0_sz, tmp_reply.ptr + ufs_desc_sz + 0x1c, 4);
-
-						lun0_sz = swap_uint32(lun0_sz);
-						lun0_sz *= sector_size;
-						lun0_sz /= 1024;
-					}
-					else
-					{
-						display_buffer_hex_ascii("EMMC raw data", tmp_reply.ptr, get_reply_len);
-
-						memcpy(&lun0_sz, tmp_reply.ptr + 0xd4, 4);
-
-						lun0_sz *= sector_size;
-						lun0_sz /= 1024;
-					}
-
-					printf("%s size = %llu\n", have_ufs ? "LUN0" : "EMMC part 0", lun0_sz);
-				}
-
-				// sometimes OKAY reply is inside data buffer
-				if (get_reply_len >= 4 && tmp_reply.ptr[get_reply_len - 4] == 'O' && tmp_reply.ptr[get_reply_len - 3] == 'K' && tmp_reply.ptr[get_reply_len - 2] == 'A' && tmp_reply.ptr[get_reply_len - 1] == 'Y')
-				{
-					get_reply_len -= 4;
-					okay_replied = true;
-				}
-
-				if (!okay_replied)
-				{
-					if (!get_reply_ffi(dev, &tmp_reply, 0))
-					{
-						ret = 1;
-						goto getoutofflashing;
-					}
-
-					if (memcmp(tmp_reply.ptr, "OKAY", 4) != 0)
-					{
-						printf(" - Error, no OKAY reply!\n");
-						ret = 1;
-						goto getoutofflashing;
-					}
-				}
-
-				okay_replied = false;
-			}
 
 			if (lun0_sz)
 			{

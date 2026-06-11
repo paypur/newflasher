@@ -34,12 +34,20 @@ static int file_exist(char *file);
 
 static void remove_file_exist(char *file);
 
+/* Parse an octal number, ignoring leading and trailing nonsense. */
+int parseoct(const char *p, size_t n);
+
+/* Verify the tar checksum. */
+int verify_checksum(const char *p);
+
+/* Returns true if this is 512 zero bytes. */
+int is_end_of_archive(const char *p);
+
 void trim(char *ptr);
 
+
 bool fastboot_cmd_ffi(HANDLE handle, struct RustVec *cvec, const char *var, char *str_buf, size_t len);
-
 bool fastboot_download_ffi(HANDLE handle, struct RustVec *cvec, const char *data, size_t len);
-
 uint32_t getvar_u32_ffi(HANDLE handle, struct RustVec *cvec, const char *var, uint32_t fallback);
 
 #endif //NEWFLASHER_H
