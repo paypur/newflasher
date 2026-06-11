@@ -509,7 +509,7 @@ static int get_vidpid(int fd, unsigned short VID, unsigned short PID)
 	return 1;
 }
 
-struct usb_handle *get_flash_mode(unsigned short VID, unsigned short PID);
+struct FastbootDevice *get_flash_mode(unsigned short VID, unsigned short PID);
 /*{
 	char busname[64], devname[64];
 	DIR *busdir, *devdir;
@@ -579,19 +579,19 @@ struct usb_handle *get_flash_mode(unsigned short VID, unsigned short PID);
 	return usb;
 }*/
 
-int usb_close(struct usb_handle *h)
-{
+int usb_close(struct FastbootDevice *h);
+/*{
 	int fd;
 
 	fd = h->desc;
 	h->desc = -1;
 	if (fd >= 0) {
 		close(fd);
-		/*printf("usb closed %d\n", fd);*/
+		/*printf("usb closed %d\n", fd);#1#
 	}
 
 	return 0;
-}
+}*/
 
 #define CloseHandle usb_close
 #endif
@@ -955,7 +955,7 @@ static unsigned long transfer_bulk_async(HANDLE dev, int ep, char *bytes, unsign
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #else
 
-static unsigned long transfer_bulk_ffi(struct usb_handle *h, int ep, const void *_bytes, unsigned long size, int exact);
+static unsigned long transfer_bulk_ffi(struct FastbootDevice *h, int ep, const void *_bytes, unsigned long size, int exact);
 /*{
 	char *bytes = (char *)_bytes;
 	unsigned long count = 0;
