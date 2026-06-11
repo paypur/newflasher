@@ -1,17 +1,12 @@
 #[cfg(test)]
 mod tests {
-    use crate::utils::parseoct;
-use crate::utils::{file_exist, file_size};
-use std::ffi::{c_char, CStr, CString};
-    use std::path::PathBuf;
+    use crate::utils::{parseoct, trim_rs};
+    use crate::utils::{file_exist, file_size};
+    use std::ffi::{c_char};
     use std::sync::{Mutex, OnceLock};
-    use flate2::read::{GzDecoder, MultiGzDecoder, ZlibDecoder};
-    use tar::Archive;
     use crate::*;
 
     unsafe extern "C" {
-        // pub fn trim(ptr: *mut c_char);
-
         pub fn is_end_of_archive(p: *const u8) -> i32;
 
         pub fn gunziper(in_: *const c_char, out: *const c_char) -> i32;
@@ -30,44 +25,42 @@ use std::ffi::{c_char, CStr, CString};
     #[test]
     fn test_fastboot_vars() {
         let mut usb = get_device().lock().unwrap();
-        let mut vec = Vec::<u8>::with_capacity(1024);
 
-        assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:max-download-size").parse::<u32>().unwrap(), 805306368);
-        assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:product"), "XQ-EC72");
-        assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:version"), "0.4");
-        assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:version-bootloader"), "8650-0001_X_Boot_SM8650_LA1.0_U_36");
-        assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:serialno"), std::env::var("SERIAL_NO").unwrap().as_str());
-        assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:secure"), "no");
-        assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:Sector-size"), "4096");
-        assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:Loader-version"), "8650-0001_X_Boot_SM8650_LA1.0_U_36");
-        assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:Phone-id"), std::env::var("PHONE_ID").unwrap().as_str());
-        assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:Device-id"), std::env::var("DEVICE_ID").unwrap().as_str());
-        assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:Platform-id"), "202270E1");
-        assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:Rooting-status"), "ROOTED");
-        assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:Ufs-info"), "KIOXIA,THGJFLT1E45BATPB,0100");
-        assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:Emmc-info"), "Emmc-info not supported");
-        assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:Default-security"), "ON");
-        assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:Keystore-counter"), "2");
-        assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:Security-state"), std::env::var("SECURITY_STATE").unwrap().as_str());
-        assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:S1-root"), "S1_Root_398d");
-        assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:Sake-root"), "5515");
+        assert_eq!(reply_str(&mut usb, b"getvar:max-download-size").parse::<u32>().unwrap(), 805306368);
+        assert_eq!(reply_str(&mut usb, b"getvar:product"), "XQ-EC72");
+        assert_eq!(reply_str(&mut usb, b"getvar:version"), "0.4");
+        assert_eq!(reply_str(&mut usb, b"getvar:version-bootloader"), "8650-0001_X_Boot_SM8650_LA1.0_U_36");
+        assert_eq!(reply_str(&mut usb, b"getvar:serialno"), std::env::var("SERIAL_NO").unwrap().as_str());
+        assert_eq!(reply_str(&mut usb, b"getvar:secure"), "no");
+        assert_eq!(reply_str(&mut usb, b"getvar:Sector-size"), "4096");
+        assert_eq!(reply_str(&mut usb, b"getvar:Loader-version"), "8650-0001_X_Boot_SM8650_LA1.0_U_36");
+        assert_eq!(reply_str(&mut usb, b"getvar:Phone-id"), std::env::var("PHONE_ID").unwrap().as_str());
+        assert_eq!(reply_str(&mut usb, b"getvar:Device-id"), std::env::var("DEVICE_ID").unwrap().as_str());
+        assert_eq!(reply_str(&mut usb, b"getvar:Platform-id"), "202270E1");
+        assert_eq!(reply_str(&mut usb, b"getvar:Rooting-status"), "ROOTED");
+        assert_eq!(reply_str(&mut usb, b"getvar:Ufs-info"), "KIOXIA,THGJFLT1E45BATPB,0100");
+        assert_eq!(reply_str(&mut usb, b"getvar:Emmc-info"), "Emmc-info not supported");
+        assert_eq!(reply_str(&mut usb, b"getvar:Default-security"), "ON");
+        assert_eq!(reply_str(&mut usb, b"getvar:Keystore-counter"), "2");
+        assert_eq!(reply_str(&mut usb, b"getvar:Security-state"), std::env::var("SECURITY_STATE").unwrap().as_str());
+        assert_eq!(reply_str(&mut usb, b"getvar:S1-root"), "S1_Root_398d");
+        assert_eq!(reply_str(&mut usb, b"getvar:Sake-root"), "5515");
 
-        usb.fastboot_cmd(&mut vec, b"Get-root-key-hash").unwrap();
-        assert_eq!(vec.len(), 48);
-        assert_eq!(vec.iter().map(|b| format!("{:02X}", b)).collect::<String>(), std::env::var("ROOT_KEY_HASH").unwrap());
+        usb.command(b"Get-root-key-hash").unwrap();
+        assert_eq!(usb.reply.len(), 48);
+        assert_eq!(usb.reply.iter().map(|b| format!("{:02X}", b)).collect::<String>(), std::env::var("ROOT_KEY_HASH").unwrap());
 
-        assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:slot-count"), "2");
-        assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:current-slot"), "a");
-        assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:Battery"), "Battery not supported");
+        assert_eq!(reply_str(&mut usb, b"getvar:slot-count"), "2");
+        assert_eq!(reply_str(&mut usb, b"getvar:current-slot"), "a");
+        assert_eq!(reply_str(&mut usb, b"getvar:Battery"), "Battery not supported");
     }
 
     #[test]
     fn test_fastboot_flashmode() {
         let mut usb = get_device().lock().unwrap();
-        let mut vec = Vec::<u8>::new();
 
-        assert!(usb.fastboot_download(&mut vec, &[0u8]).is_ok());
-        assert!(usb.fastboot_cmd(&mut vec, b"Write-TA:2:10100").is_ok());
+        assert!(usb.download(&[0u8]).is_ok());
+        assert!(usb.command(b"Write-TA:2:10100").is_ok());
     }
 
     #[test]
@@ -75,6 +68,15 @@ use std::ffi::{c_char, CStr, CString};
         let text = c"files/text".as_ptr();
         assert_eq!(file_exist(text), 1);
         assert_eq!(file_size(text), 26);
+    }
+
+    #[test]
+    fn test_trim() {
+        let str = "  this is\r a\n test\t string  .  ";
+        assert_eq!(trim_rs(str), "thisisateststring.");
+
+        let str1 = "\r\n\t why would you type\r\r\r\r \n\n\n\n \t\t\t\t like this";
+        assert_eq!(trim_rs(str1), "whywouldyoutypelikethis");
     }
 
     #[test]
@@ -86,13 +88,13 @@ use std::ffi::{c_char, CStr, CString};
         assert_eq!(parseoct(c"a777z".as_ptr(), 5), 0b111111111);
     }
 
-    fn reply_str<'a>(buffer: &'a mut Vec<u8>, usb: &mut FastbootDevice, var: &[u8]) -> &'a str {
-        if let Err(e) = usb.fastboot_cmd(buffer, var) {
+    fn reply_str<'a>(usb: &'a mut FastbootDevice, var: &[u8]) -> &'a str {
+        if let Err(e) = usb.command(var) {
             error!("{}", e);
             return "";
         };
 
-        str::from_utf8(buffer).expect(&format!("Failed to parse {:?} as str", buffer.as_slice()))
+        str::from_utf8(usb.reply.as_slice()).expect(&format!("Failed to parse {:?} as str", usb.reply.as_slice()))
     }
 
 }

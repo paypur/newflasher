@@ -17,24 +17,20 @@ unsafe extern "C" {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn new_cvec(capacity: usize) -> CVec {
+pub extern "C" fn new_cvec(capacity: usize) -> ByteVec {
     into_cvec(Vec::with_capacity(capacity))
 }
 
-fn into_cvec(vec: Vec<u8>) -> CVec {
-    let (ptr, len, capacity) = vec.into_raw_parts();
-    CVec { ptr, len, capacity }
+fn into_cvec(vec: Vec<u8>) -> ByteVec {
+    ByteVec::from(vec)
 }
 
-fn from_cvec(cvec: &CVec) -> Vec<u8> {
-    unsafe { Vec::from_raw_parts(cvec.ptr, cvec.len, cvec.capacity) }
+fn from_cvec(cvec: &ByteVec) -> Vec<u8> {
+    vec![]
 }
 
-fn return_vec(cvec: &mut CVec, vec: Vec<u8>) {
-    let (ptr, len, capacity) = vec.into_raw_parts();
-    cvec.ptr = ptr;
-    cvec.len = len;
-    cvec.capacity = capacity;
+fn return_vec(cvec: &mut ByteVec, vec: Vec<u8>) {
+
 }
 
 #[unsafe(no_mangle)]
@@ -65,7 +61,7 @@ pub extern "C" fn transfer_bulk_ffi(unsafe_handle: *mut FastbootDevice, ep: i32,
     match ep {
         0 => {
             let mut vec = unsafe { Vec::from_raw_parts(chars, len, capacity) };
-            let res = handle.input_bulk(&mut vec);
+            let res = handle.input_bulk();
             let _ = vec.into_raw_parts(); // make sure rust doesnt drop this
             res
         },
@@ -75,21 +71,21 @@ pub extern "C" fn transfer_bulk_ffi(unsafe_handle: *mut FastbootDevice, ep: i32,
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn get_reply_ffi(unsafe_handle: *mut FastbootDevice, cvec: &mut CVec, exact: i32) -> FastbootHeader {
+pub extern "C" fn get_reply_ffi(unsafe_handle: *mut FastbootDevice, cvec: &mut ByteVec, exact: i32) -> FastbootHeader {
     let handle = unsafe { &mut *unsafe_handle };
     let mut vec = from_cvec(cvec);
-    let res = handle.get_reply(&mut vec);
+    let res = handle.get_reply();
     return_vec(cvec, vec);
     res.unwrap_or_else(|_| FastbootHeader::Error)
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn fastboot_cmd_ffi(usb_handle: *mut FastbootDevice, cvec: &mut CVec, cmd: *const c_char, str: *mut u8, mut len: usize) -> bool {
+pub extern "C" fn fastboot_cmd_ffi(usb_handle: *mut FastbootDevice, cvec: &mut ByteVec, cmd: *const c_char, str: *mut u8, mut len: usize) -> bool {
     let usb = unsafe { &mut *usb_handle };
     let mut buffer = from_cvec(cvec);
     let cstr = unsafe { CStr::from_ptr(cmd) };
 
-    if let Err(e) = usb.fastboot_cmd(&mut buffer, cstr.to_bytes()) {
+    if let Err(e) = usb.command(cstr.to_bytes()) {
         error!("{}", e);
         return false;
     }
@@ -109,12 +105,12 @@ pub extern "C" fn fastboot_cmd_ffi(usb_handle: *mut FastbootDevice, cvec: &mut C
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn fastboot_download_ffi(usb_handle: *mut FastbootDevice, cvec: &mut CVec, data: *const u8, len: usize) -> bool {
+pub extern "C" fn fastboot_download_ffi(usb_handle: *mut FastbootDevice, cvec: &mut ByteVec, data: *const u8, len: usize) -> bool {
     let usb = unsafe { &mut *usb_handle };
     let mut buffer = from_cvec(cvec);
     let slice = unsafe { slice::from_raw_parts(data, len) };
 
-    if let Err(e) = usb.fastboot_download(&mut buffer, slice) {
+    if let Err(e) = usb.download(slice) {
         error!("{}", e);
         return false;
     }
@@ -123,11 +119,11 @@ pub extern "C" fn fastboot_download_ffi(usb_handle: *mut FastbootDevice, cvec: &
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn getvar_u32_ffi(usb_handle: *mut FastbootDevice, cvec: &mut CVec, cmd: *const c_char, fallback: u32) -> u32 {
+pub extern "C" fn getvar_u32_ffi(usb_handle: *mut FastbootDevice, cvec: &mut ByteVec, cmd: *const c_char, fallback: u32) -> u32 {
     let usb = unsafe { &mut *usb_handle };
     let mut buffer = from_cvec(cvec);
 
-    let u = usb.getvar_u32(&mut buffer, unsafe { CStr::from_ptr(cmd) }.to_bytes(), fallback);
+    let u = usb.getvar_u32(unsafe { CStr::from_ptr(cmd) }.to_bytes(), fallback);
     return_vec(cvec, buffer);
     u
 }
