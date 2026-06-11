@@ -20,9 +20,9 @@ use std::ffi::{c_char, CStr, CString};
     const VID: u16 = 0x0FCE;
     const PID: u16 = 0xB00B;
 
-    static DEVICE: OnceLock<Mutex<UsbInterfaces>> = OnceLock::new();
+    static DEVICE: OnceLock<Mutex<FastbootDevice>> = OnceLock::new();
 
-    fn get_device() -> &'static Mutex<UsbInterfaces> {
+    fn get_device() -> &'static Mutex<FastbootDevice> {
         DEVICE.get_or_init(|| Mutex::new(get_flash_mode_rs(VID, PID)))
     }
 
@@ -52,7 +52,7 @@ use std::ffi::{c_char, CStr, CString};
         assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:S1-root"), "S1_Root_398d");
         assert_eq!(reply_str(&mut vec, &mut usb, b"getvar:Sake-root"), "5515");
 
-        fastboot_cmd(&mut usb, &mut vec, b"Get-root-key-hash").unwrap();
+        usb.fastboot_cmd(&mut vec, b"Get-root-key-hash").unwrap();
         assert_eq!(vec.len(), 48);
         assert_eq!(vec.iter().map(|b| format!("{:02X}", b)).collect::<String>(), std::env::var("ROOT_KEY_HASH").unwrap());
 
@@ -66,8 +66,8 @@ use std::ffi::{c_char, CStr, CString};
         let mut usb = get_device().lock().unwrap();
         let mut vec = Vec::<u8>::new();
 
-        assert!(fastboot_download(&mut usb, &mut vec, &[0u8]).is_ok());
-        assert!(fastboot_cmd(&mut usb, &mut vec, b"Write-TA:2:10100").is_ok());
+        assert!(usb.fastboot_download(&mut vec, &[0u8]).is_ok());
+        assert!(usb.fastboot_cmd(&mut vec, b"Write-TA:2:10100").is_ok());
     }
 
     #[test]
@@ -86,8 +86,8 @@ use std::ffi::{c_char, CStr, CString};
         assert_eq!(parseoct(c"a777z".as_ptr(), 5), 0b111111111);
     }
 
-    fn reply_str<'a>(buffer: &'a mut Vec<u8>, usb: &mut UsbInterfaces, var: &[u8]) -> &'a str {
-        if let Err(e) = fastboot_cmd(usb, buffer, var) {
+    fn reply_str<'a>(buffer: &'a mut Vec<u8>, usb: &mut FastbootDevice, var: &[u8]) -> &'a str {
+        if let Err(e) = usb.fastboot_cmd(buffer, var) {
             error!("{}", e);
             return "";
         };

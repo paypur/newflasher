@@ -19,14 +19,11 @@ enum FastbootReply {
     FR_FAIL,
 };
 
-struct usb_handle {
-    int desc;
-    unsigned char ep_in;
-    unsigned char ep_out;
+struct FastbootDevice {
     char _context[8 + 8 + 128 + 112];
 };
 
-typedef struct usb_handle *HANDLE;
+typedef struct FastbootDevice *HANDLE;
 
 unsigned int file_size(char *filename);
 
