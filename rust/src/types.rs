@@ -1,10 +1,12 @@
 use std::error::Error;
-use std::io;
+use std::fmt::{Display, Formatter};
+use std::{io, mem};
 use std::io::{Read, Write};
 use nusb::io::{EndpointRead, EndpointWrite};
 use nusb::transfer::{Bulk, In, Out};
 use nusb::{Device, Interface};
 use std::time::Duration;
+use derive_more::{AsRef, Deref, DerefMut};
 use log::error;
 use tar::Entry;
 use crate::u32_from_bytes;
@@ -12,11 +14,43 @@ use crate::u32_from_bytes;
 const IN: u8 = 0x81;
 const OUT: u8 = 0x01;
 
+#[derive(AsRef, Debug, Deref, DerefMut, PartialEq)]
 #[repr(C)]
-pub struct CVec {
-    pub ptr: *mut u8,
-    pub len: usize,
-    pub capacity: usize,
+pub struct ByteVec {
+    data: Vec<u8>
+}
+
+impl ByteVec {
+    fn from_len(len: usize) -> Self {
+        ByteVec::from(format!("{:08X}", len))
+    }
+}
+
+impl From<Vec<u8>> for ByteVec {
+    fn from(data: Vec<u8>) -> ByteVec {
+        ByteVec { data }
+    }
+}
+
+impl From<String> for ByteVec {
+    fn from(value: String) -> Self {
+        ByteVec::from(value.into_bytes())
+    }
+}
+
+impl Display for ByteVec {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        unsafe {
+            write!(f, "{}", &self.data.iter().map(|&b| char::from_u32_unchecked(b as u32)).collect::<String>())
+        }
+    }
+}
+
+impl<T> PartialEq<T> for ByteVec
+where T: AsRef<[u8]> {
+    fn eq(&self, other: &T) -> bool {
+        self == other
+    }
 }
 
 #[repr(C)]
@@ -25,7 +59,7 @@ pub struct FastbootDevice {
     interface: Interface,
     pub reader: EndpointRead<Bulk>,
     pub writer: EndpointWrite<Bulk>,
-    // TODO: move vector here
+    pub reply: ByteVec,
 }
 
 const BUFFER_SIZE: usize = 1024;
@@ -36,34 +70,38 @@ impl FastbootDevice {
     pub fn new(device: Device, interface: Interface) -> Self {
         let reader = interface.endpoint::<Bulk, In>(IN).unwrap().reader(BUFFER_SIZE).with_num_transfers(NUM_TRANSFERS).with_read_timeout(TEN_SEC);
         let writer = interface.endpoint::<Bulk, Out>(OUT).unwrap().writer(BUFFER_SIZE).with_num_transfers(NUM_TRANSFERS).with_write_timeout(TEN_SEC);
-        Self { device, interface, reader, writer }
+        let vec = Vec::<u8>::with_capacity(32);
+        Self { device, interface, reader, writer, reply: ByteVec::from(vec) }
     }
 
-    pub fn fastboot_cmd(&mut self, buffer: &mut Vec<u8>, cmd: &[u8]) -> Result<(), Box<dyn Error>> {
+    pub fn command(&mut self, cmd: &[u8]) -> Result<(), Box<dyn Error>> {
         if cmd.starts_with(b"getvar:") {
             // normal if it fail
-            self.output_input_bulk(buffer, cmd)?;
+            self.output_input_bulk(cmd)?;
         }
         else if (cmd.starts_with(b"Get-")) {
             self.output_bulk(cmd)?;
 
-            let header = self.get_reply(buffer)?;
-            if header != FastbootHeader::Data || buffer.len() != 8 {
+            let header = self.get_reply()?;
+            if header != FastbootHeader::Data || self.reply.len() != 8 {
                 return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Expected DATA header, received {:?}", header)).into());
             }
 
-            let len = usize::from_str_radix(str::from_utf8(&buffer).expect("Failed to parse buffer as str"), 16).expect("Failed to parse str as hexadecimal");
+            let len = usize::from_str_radix(str::from_utf8(&self.reply).expect("Failed to parse self.reply as str"), 16).expect("Failed to parse str as hexadecimal");
 
             // second read for actual data
-            self.input_bulk(buffer)?;
-            if FastbootHeader::from(buffer.as_slice()) == FastbootHeader::Okay { todo!("unimplemented OKAY after DATA") }
-            assert_eq!(len, buffer.len());
+            self.input_bulk()?;
+            if FastbootHeader::from(self.reply.as_slice()) == FastbootHeader::Okay { todo!("unimplemented OKAY after DATA") }
+            assert_eq!(len, self.reply.len());
 
             // if not OKAY in 2nd read, should read a 3rd time to acknowledge
-            assert_eq!(self.get_reply(&mut vec![0, 0, 0, 0])?, FastbootHeader::Okay);
+            let mut temp = vec![0u8; 4];
+            mem::swap::<Vec<u8>>(self.reply.as_mut(), temp.as_mut()); // TODO: this is kinda bad
+            assert_eq!(self.get_reply()?, FastbootHeader::Okay);
+            mem::swap::<Vec<u8>>(self.reply.as_mut(), temp.as_mut());
         }
         else if cmd.eq(b"Write-TA:2:10100") {
-            let header = self.output_input_bulk(buffer, cmd)?;
+            let header = self.output_input_bulk(cmd)?;
             if header != FastbootHeader::Okay {
                 return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Expected OKAY header, received {:?}", header)).into());
             }
@@ -75,22 +113,21 @@ impl FastbootDevice {
         Ok(())
     }
 
-    /// Tries to write data to device
-    pub fn fastboot_download(&mut self, buffer: &mut Vec<u8>, data: &[u8]) -> Result<(), Box<dyn Error>> {
+    /// Tries to write a buffer to device
+    pub fn download(&mut self, data: &[u8]) -> Result<(), Box<dyn Error>> {
         let mut full_cmd = b"download:".to_vec();
-        let string = format!("{:08X}", data.len());
-        let hex_len = string.as_bytes();
-        full_cmd.extend_from_slice(hex_len);
+        let hex_len = ByteVec::from_len(data.len());
+        full_cmd.extend_from_slice(hex_len.as_slice());
 
-        let header = self.output_input_bulk(buffer, &mut full_cmd)?;
+        let header = self.output_input_bulk(&mut full_cmd)?;
         if header != FastbootHeader::Data {
             return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Expected DATA header, received {:?}", header)).into());
         }
-        if buffer.ne(&hex_len) {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Expected {:?}, received {:?}", hex_len, buffer)).into());
+        if hex_len != self.reply {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Expected {:?}, received {}", hex_len, self.reply)).into());
         }
 
-        let header = self.output_input_bulk(buffer, data)?;
+        let header = self.output_input_bulk(data)?;
         if header != FastbootHeader::Okay {
             return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Expected OKAY header, received {:?}", header)).into());
         }
@@ -98,27 +135,26 @@ impl FastbootDevice {
         Ok(())
     }
 
-    pub fn fastboot_download_entry(&mut self, entry: &mut Entry<Box<dyn Read>>) -> io::Result<()> {
+    /// Tries to write tar entry to device
+    /// data is chunked in 16KiB parts
+    pub fn download_tar_entry(&mut self, entry: &mut Entry<Box<dyn Read>>) -> io::Result<()> {
         let mut command = b"download:".to_vec();
-        let string = format!("{:08X}", entry.size());
-        let hex_len = string.as_bytes();
-        command.extend_from_slice(hex_len);
+        let hex_len = ByteVec::from_len(entry.size() as usize);
+        command.extend_from_slice(hex_len.as_slice());
 
-        let mut buffer = Vec::new();
-
-        let header = self.output_input_bulk(buffer.as_mut(), &mut command)?;
+        let header = self.output_input_bulk(&mut command)?;
         if header != FastbootHeader::Data {
             return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Expected DATA header, received {:?}", header)).into());
         }
-        if buffer.ne(&hex_len) {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Expected {:?}, received {:?}", hex_len, buffer)).into());
+        if hex_len.ne(self.reply.as_ref()) {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Expected {:?}, received {}", hex_len, self.reply)).into());
         }
 
         entry.take(16384);
         std::io::copy(entry, &mut self.writer)?;
         self.writer.flush()?;
 
-        let header = self.get_reply(buffer.as_mut())?;
+        let header = self.get_reply()?;
         if header != FastbootHeader::Okay {
             return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Expected OKAY header, received {:?}", header)).into());
         }
@@ -126,24 +162,24 @@ impl FastbootDevice {
         self.writer.flush_end().map(|_| ())
     }
 
-    pub fn output_input_bulk(&mut self, buffer: &mut Vec<u8>, var: &[u8]) -> Result<FastbootHeader, io::Error> {
+    pub fn output_input_bulk(&mut self, var: &[u8]) -> Result<FastbootHeader, io::Error> {
         self.output_bulk(var)?;
-        self.get_reply(buffer)
+        self.get_reply()
     }
 
-    pub fn bulk_transfer_expect(&mut self, buffer: &mut Vec<u8>, var: &[u8], expected: FastbootHeader) -> Result<(), Box<dyn Error>> {
+    pub fn bulk_transfer_expect(&mut self, var: &[u8], expected: FastbootHeader) -> Result<(), Box<dyn Error>> {
         self.output_bulk(var)?;
-        let header = self.get_reply(buffer)?;
+        let header = self.get_reply()?;
         if header != expected {
             return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Expected OKAY header, received {:?}", header)).into());
         }
         Ok(())
     }
 
-    pub fn getvar_u32(&mut self, buffer: &mut Vec<u8>, var: &[u8], default: u32) -> u32 {
-        match self.output_input_bulk(buffer, var) {
+    pub fn getvar_u32(&mut self, var: &[u8], default: u32) -> u32 {
+        match self.output_input_bulk(var) {
             Ok(header) => if header == FastbootHeader::Okay {
-                return u32_from_bytes(buffer)
+                return u32_from_bytes(self.reply.as_ref())
             }
             Err(e) => {
                 error!("{}", e);
@@ -153,23 +189,23 @@ impl FastbootDevice {
         default
     }
 
-    pub fn get_reply(&mut self, reply: &mut Vec<u8>) -> io::Result<FastbootHeader> {
-        let len = self.input_bulk(reply)?;
+    pub fn get_reply(&mut self) -> io::Result<FastbootHeader> {
+        let len = self.input_bulk()?;
         if len < 4 { return Ok(FastbootHeader::NoHeader); }
 
-        let prefix = FastbootHeader::from(&reply[0..4]);
+        let prefix = FastbootHeader::from(&self.reply[0..4]);
         match prefix {
             FastbootHeader::Okay | FastbootHeader::Fail if len == 4 => {
-                reply.clear();
+                self.reply.clear();
             },
             FastbootHeader::Okay | FastbootHeader::Fail if len > 4 => {
                 // strip the prefix and copy the rest
-                reply.drain(0..4);
+                self.reply.drain(0..4);
             }
             // xperia 10 mark 3 XQ-BT41 send 13 bytes where last byte is null termination
             FastbootHeader::Data if len == 12 || len == 13 => {
-                reply.truncate(12);
-                reply.drain(0..4);
+                self.reply.truncate(12);
+                self.reply.drain(0..4);
             },
             _ => ()
         };
@@ -180,7 +216,7 @@ impl FastbootDevice {
     pub fn output_bulk(
         &mut self,
         data: &[u8],
-    ) -> std::io::Result<usize> {
+    ) -> io::Result<usize> {
         if let Err(e) = self.writer.write_all(data) {
             return Err(e);
         }
@@ -193,11 +229,10 @@ impl FastbootDevice {
 
     pub fn input_bulk(
         &mut self,
-        vec: &mut Vec<u8>,
-    ) -> std::io::Result<usize> {
-        vec.clear();
+    ) -> io::Result<usize> {
+        self.reply.clear();
         let mut short_reader = self.reader.until_short_packet();
-        let r_len = short_reader.read_to_end(vec);
+        let r_len = short_reader.read_to_end(self.reply.as_mut());
         if let Ok(len) = r_len && let Err(e) =short_reader.consume_end() {
             println!("{}", e);
         }

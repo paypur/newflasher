@@ -12,6 +12,7 @@ log = "0.4.32"
 tar = "0.4.46"
 flate2 = "1.1.9"
 anyhow = "1.0.102"
+derive_more = { version = "2.1.1", features = ["as_ref", "deref", "deref_mut"] }
 
 [build-dependencies]
 cc = "1.2.63"
