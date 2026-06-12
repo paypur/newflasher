@@ -6,6 +6,7 @@ mod tests {
 
     use std::fs::File;
     use std::io::Read;
+    use std::path::PathBuf;
     use std::sync::{Mutex, OnceLock};
     use tar::Archive;
     use crate::sins::{transfer_cms};
@@ -25,12 +26,14 @@ mod tests {
 
     #[test]
     fn test_xml() {
-        std::env::set_current_dir("../XQ-EC72_Customized_HK_69.2.A.4.90/").unwrap();
+        let base = PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/");
 
-        let partition_files = partition_delivery("partition/partition_delivery.xml").unwrap();
+        println!("{:?}", std::env::current_dir());
+
+        let partition_files = partition_delivery(base.join("partition/partition_delivery.xml")).unwrap();
         println!("partition files: {:#?}", partition_files);
         println!();
-        let boot = boot_delivery("boot/boot_delivery.xml").unwrap();
+        let boot = boot_delivery(base.join("boot/boot_delivery.xml")).unwrap();
         println!("Boot Delivery: {:#?}", boot);
     }
 
@@ -59,7 +62,7 @@ mod tests {
         assert_eq!(reply_str(&mut usb, b"getvar:S1-root"), "S1_Root_398d");
         assert_eq!(reply_str(&mut usb, b"getvar:Sake-root"), "5515");
 
-        usb.command(b"Get-root-key-hash").unwrap();
+        usb.get_data(b"Get-root-key-hash").unwrap();
         assert_eq!(usb.reply.len(), 48);
         assert_eq!(usb.reply.iter().map(|b| format!("{:02X}", b)).collect::<String>(), std::env::var("ROOT_KEY_HASH").unwrap());
 
@@ -73,14 +76,16 @@ mod tests {
         let mut usb = get_device().lock().unwrap();
 
         usb.download(&[0u8]).unwrap();
-        usb.command(b"Write-TA:2:10100").unwrap();
+        usb.command_expect(b"Write-TA:2:10100", FastbootHeader::Okay).unwrap();
     }
 
     #[test]
     fn test_sin_signature() {
         let mut usb = get_device().lock().unwrap();
 
-        let file = File::open("files/partition-image-LUN0_124936192_X-FLASH-ALL-88DF.sin").unwrap();
+        println!("{:?}", std::env::current_dir());
+
+        let file = File::open("../../XQ-EC72_Customized_HK_69.2.A.4.90/partition/partition-image-LUN0_124936192_X-FLASH-ALL-88DF.sin").unwrap();
         let mut archive = Archive::new(Box::new(file) as Box<dyn Read>);
 
         let mut fst = archive.entries().unwrap().nth(0).unwrap().unwrap();
