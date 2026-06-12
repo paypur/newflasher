@@ -216,7 +216,7 @@ impl FastbootDevice {
         Ok(prefix)
     }
 
-    pub fn transfer_out(&mut self, data: &[u8]) -> Result<(usize)> {
+    pub fn transfer_out(&mut self, data: &[u8]) -> Result<usize> {
         self.writer.write_all(data)?;
         self.writer.flush_end()?;
         Ok(data.len())
