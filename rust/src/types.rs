@@ -104,36 +104,51 @@ impl FastbootDevice {
     }
 
     pub fn command(&mut self, cmd: &[u8]) -> Result<()> {
+        self.write_and_read_reply(cmd).with_context(|| format!("Fastboot command {} failed!", String::from_utf8_lossy(cmd)))?;
+        Ok(())
+    }
+
+    pub fn command_expect(&mut self, cmd: &[u8], expected: FastbootHeader) -> Result<()> {
+        self.write_and_expect_reply(cmd, expected).with_context(|| format!("Fastboot command {} failed!", String::from_utf8_lossy(cmd)))
+    }
+
+    /// For commands that require multiple reads to receive the actual data
+    pub fn get_data(&mut self, cmd: &[u8]) -> Result<()> {
         let mut body = || -> Result<()> {
-            if cmd.starts_with(b"getvar:") {
-                self.transfer_out_in(cmd)?; // normal if it fails
-            } else if cmd.eq(b"Write-TA:2:10100") {
-                self.transfer_out_in_expect(cmd, FastbootHeader::Okay)?;
-            } else if cmd.starts_with(b"Get-") {
-                self.transfer_out(cmd)?;
+            self.write(cmd)?;
 
-                let header = self.read_reply()?;
-                ensure!(header == FastbootHeader::Data, format!("Expected DATA header, received {header:?}!"));
+            let header = self.read_reply()?;
+            ensure!(header == FastbootHeader::Data, format!("Expected DATA header, received {header:?}!"));
 
-                let len = self.reply.as_hexadecimal()?;
+            let len = self.reply.as_hexadecimal()?;
 
-                // second read for actual data
-                self.transfer_in()?;
-                if FastbootHeader::from(self.reply.as_slice()) == FastbootHeader::Okay { todo!("unimplemented OKAY after DATA") }
-                ensure!(len as usize == self.reply.len(), format!("Expected {len} bytes, received {:?}!", self.reply.len()));
+            // second read for actual data
+            self.read()?;
+            if FastbootHeader::from(self.reply.as_slice()) == FastbootHeader::Okay { todo!("unimplemented OKAY after DATA") }
+            ensure!(len as usize == self.reply.len(), format!("Expected {len} bytes, received {:?}!", self.reply.len()));
 
-                // if not OKAY in second read, should read a 3rd time to acknowledge
-                let mut temp = vec![0u8; 4];
-                mem::swap::<Vec<u8>>(self.reply.as_mut(), temp.as_mut()); // TODO: this is kinda bad
-                let header = self.read_reply()?;
-                ensure!(header == FastbootHeader::Okay, format!("Expected OKAY header, received {header:?}!"));
-                mem::swap::<Vec<u8>>(self.reply.as_mut(), temp.as_mut());
-            } else {
-                panic!("Fastboot command prefix '{}' not found!", str::from_utf8(cmd).unwrap());
-            }
+            // if not OKAY in second read, should read a 3rd time to acknowledge
+            let mut temp = vec![0u8; 4];
+            mem::swap::<Vec<u8>>(self.reply.as_mut(), temp.as_mut()); // TODO: this is kinda bad
+            let header = self.read_reply()?;
+            ensure!(header == FastbootHeader::Okay, format!("Expected OKAY header, received {header:?}!"));
+            mem::swap::<Vec<u8>>(self.reply.as_mut(), temp.as_mut());
+
             Ok(())
         };
-        body().with_context(|| format!("Fastboot command {} failed!", str::from_utf8(cmd).unwrap()))
+        body().with_context(|| format!("Fastboot command {} failed!", String::from_utf8_lossy(cmd)))
+    }
+
+    pub fn getvar_u32(&mut self, var: &[u8], default: u32) -> u32 {
+        match self.write_and_read_reply(var) {
+            Ok(header) => if header == FastbootHeader::Okay {
+                return u32_from_bytes(self.reply.as_ref())
+            }
+            Err(e) => {
+                error!("Failed to execute command: {}! {e}", str::from_utf8(var).unwrap());
+            }
+        }
+        default
     }
 
     /// Tries to write a buffer to device
@@ -141,10 +156,10 @@ impl FastbootDevice {
         let hex_len = ByteVec::from_len(data.len());
         let cmd = [b"download:", hex_len.as_slice()].concat();
 
-        self.transfer_out_in_expect(&cmd, FastbootHeader::Data)?;
+        self.write_and_expect_reply(&cmd, FastbootHeader::Data)?;
         ensure!(hex_len == self.reply, format!("Expected {hex_len}, received {}!", self.reply));
 
-        self.transfer_out_in_expect(data, FastbootHeader::Okay).with_context(|| format!("Failed to write to device:\n {:?}", data))?;
+        self.write_and_expect_reply(data, FastbootHeader::Okay).with_context(|| format!("Failed to write to device:\n {:?}", data))?;
 
         Ok(())
     }
@@ -155,7 +170,7 @@ impl FastbootDevice {
         let hex_len = ByteVec::from_len(entry.size() as usize);
         let cmd = [b"download:", hex_len.as_slice()].concat();
 
-        self.transfer_out_in_expect(&cmd, FastbootHeader::Data)?;
+        self.write_and_expect_reply(&cmd, FastbootHeader::Data)?;
         ensure!(hex_len == self.reply, format!("Expected {hex_len}, received {}!", self.reply));
 
         entry.take(16384);
@@ -168,32 +183,26 @@ impl FastbootDevice {
         Ok(())
     }
 
-    pub fn getvar_u32(&mut self, var: &[u8], default: u32) -> u32 {
-        match self.transfer_out_in(var) {
-            Ok(header) => if header == FastbootHeader::Okay {
-                return u32_from_bytes(self.reply.as_ref())
-            }
-            Err(e) => {
-                error!("Failed to execute command: {}! {e}", str::from_utf8(var).unwrap());
-            }
-        }
-        default
-    }
-
-    pub fn transfer_out_in(&mut self, var: &[u8]) -> Result<FastbootHeader> {
-        self.transfer_out(var)?;
+    pub fn write_and_read_reply(&mut self, cmd: &[u8]) -> Result<FastbootHeader> {
+        self.write(cmd)?;
         self.read_reply()
     }
 
-    pub fn transfer_out_in_expect(&mut self, var: &[u8], expected: FastbootHeader) -> Result<()> {
-        self.transfer_out(var)?;
-        let received = self.read_reply()?;
+    pub fn write_and_expect_reply(&mut self, cmd: &[u8], expected: FastbootHeader) -> Result<()> {
+        let received= self.write_and_read_reply(cmd)?;
         ensure!(received == expected, format!("Expected {expected} header, received {received}!"));
         Ok(())
     }
 
+    pub fn write(&mut self, data: &[u8]) -> Result<usize> {
+        self.writer.write_all(data)?;
+        self.writer.flush_end()?;
+        Ok(data.len())
+    }
+
+    /// Strips reply header from self.reply
     pub fn read_reply(&mut self) -> Result<FastbootHeader> {
-        let len = self.transfer_in()?;
+        let len = self.read()?;
         if len < 4 { return Ok(FastbootHeader::NoHeader); }
 
         let prefix = FastbootHeader::from(&self.reply[0..4]);
@@ -216,13 +225,8 @@ impl FastbootDevice {
         Ok(prefix)
     }
 
-    pub fn transfer_out(&mut self, data: &[u8]) -> Result<usize> {
-        self.writer.write_all(data)?;
-        self.writer.flush_end()?;
-        Ok(data.len())
-    }
-
-    pub fn transfer_in(&mut self) -> Result<usize> {
+    /// Reads data from device into self.reply
+    pub fn read(&mut self) -> Result<usize> {
         self.reply.clear();
         let mut short_reader = self.reader.until_short_packet();
         let size = short_reader.read_to_end(self.reply.as_mut())?;

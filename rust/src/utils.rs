@@ -49,8 +49,7 @@ pub extern "C" fn verify_checksum(ptr: *const c_char) -> bool {
         // Standard tar checksum adds unsigned bytes.
         if i < 148 || i > 155 {
             sum += *b as u32;
-        }
-        else {
+        } else {
             sum += 0x20;
         }
     }
@@ -61,7 +60,7 @@ pub extern "C" fn verify_checksum(ptr: *const c_char) -> bool {
 #[unsafe(no_mangle)]
 pub extern "C" fn is_end_of_archive(ptr: *const c_char) -> bool {
     for n in 511..=0 {
-        if unsafe{ *ptr.add(n) } != b'\0' as c_char {
+        if unsafe { *ptr.add(n) } != b'\0' as c_char {
             return false;
         }
     }

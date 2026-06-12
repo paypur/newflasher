@@ -154,7 +154,7 @@ pub fn process_sins_rs(
 
                 println!("      {erase_cmd}");
 
-                usb.transfer_out_in_expect(erase_cmd.as_bytes(), FastbootHeader::Okay)?;
+                usb.write_and_expect_reply(erase_cmd.as_bytes(), FastbootHeader::Okay)?;
             }
 
             let mut command = String::new();
@@ -180,7 +180,7 @@ pub fn process_sins_rs(
 
             println!("      {command}");
 
-            usb.transfer_out_in_expect(command.as_bytes(), FastbootHeader::Okay)?;
+            usb.write_and_expect_reply(command.as_bytes(), FastbootHeader::Okay)?;
 
             println!("      OKAY.");
         }
@@ -212,7 +212,7 @@ pub fn transfer_cms(usb: &mut FastbootDevice, mut entry: &mut Entry<Box<dyn Read
             error!("     - Invalid command string: {}", cmd_str);
         }
 
-        if usb.transfer_out_in(cmd_str.as_bytes()).expect("      Error writing signature command!") == FastbootHeader::Fail && !is_2021_device {
+        if usb.write_and_read_reply(cmd_str.as_bytes()).expect("      Error writing signature command!") == FastbootHeader::Fail && !is_2021_device {
             println!("      device from 2021 and up?");
             is_2021_device = true;
             continue; // goto repeat_here
@@ -232,7 +232,7 @@ pub fn transfer_cms(usb: &mut FastbootDevice, mut entry: &mut Entry<Box<dyn Read
     println!("      OKAY.");
 
     if is_2021_device {
-        usb.transfer_out_in_expect(b"signature", FastbootHeader::Okay)?;
+        usb.write_and_expect_reply(b"signature", FastbootHeader::Okay)?;
         println!("      OKAY.");
     }
 

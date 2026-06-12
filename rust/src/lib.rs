@@ -59,11 +59,11 @@ pub extern "C" fn transfer_bulk_ffi(unsafe_handle: *mut FastbootDevice, ep: i32,
     match ep {
         0 => {
             let mut vec = unsafe { Vec::from_raw_parts(chars, len, capacity) };
-            let res = handle.transfer_in();
+            let res = handle.read();
             let _ = vec.into_raw_parts(); // make sure rust doesnt drop this
             res
         },
-        1 => handle.transfer_out(unsafe { slice::from_raw_parts(chars, len) }),
+        1 => handle.write(unsafe { slice::from_raw_parts(chars, len) }),
         _ => panic!("Invalid endpoint direction: {:?}", ep)
     }.unwrap_or(0)
 }
