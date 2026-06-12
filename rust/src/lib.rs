@@ -2,6 +2,7 @@ mod tests;
 mod types;
 mod utils;
 mod sins;
+mod xml_parser;
 
 use nusb::{Device, Interface, MaybeFuture};
 use std::ffi::{c_char, c_ushort, CStr};
@@ -16,8 +17,7 @@ unsafe extern "C" {
     pub fn display_buffer_hex_ascii(message: *const c_char, buffer: *const c_char, size: usize);
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn new_cvec(capacity: usize) -> ByteVec {
+pub fn new_cvec(capacity: usize) -> ByteVec {
     into_cvec(Vec::with_capacity(capacity))
 }
 

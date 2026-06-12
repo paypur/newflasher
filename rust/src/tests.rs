@@ -3,17 +3,15 @@ mod tests {
     use crate::utils::{file_exist, file_size};
     use crate::utils::{parseoct, trim_rs};
     use crate::*;
-    use std::ffi::c_char;
+
     use std::fs::File;
     use std::io::Read;
     use std::sync::{Mutex, OnceLock};
     use tar::Archive;
     use crate::sins::{transfer_cms};
+    use crate::xml_parser::{boot_delivery, partition_delivery};
 
     unsafe extern "C" {
-        pub fn is_end_of_archive(p: *const u8) -> i32;
-
-        pub fn gunziper(in_: *const c_char, out: *const c_char) -> i32;
     }
 
     const VID: u16 = 0x0FCE;
@@ -23,6 +21,17 @@ mod tests {
 
     fn get_device() -> &'static Mutex<FastbootDevice> {
         DEVICE.get_or_init(|| Mutex::new(get_flash_mode_rs(VID, PID)))
+    }
+
+    #[test]
+    fn test_xml() {
+        std::env::set_current_dir("../XQ-EC72_Customized_HK_69.2.A.4.90/").unwrap();
+
+        let partition_files = partition_delivery("partition/partition_delivery.xml").unwrap();
+        println!("partition files: {:#?}", partition_files);
+        println!();
+        let boot = boot_delivery("boot/boot_delivery.xml").unwrap();
+        println!("Boot Delivery: {:#?}", boot);
     }
 
     // https://android.googlesource.com/platform/system/core/+/master/fastboot/README.md

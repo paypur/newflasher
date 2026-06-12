@@ -13,6 +13,7 @@ tar = "0.4.46"
 flate2 = "1.1.9"
 anyhow = "1.0.102"
 derive_more = { version = "2.1.1", features = ["as_ref", "deref", "deref_mut", "display"] }
+xml = "1.3.0"
 
 [build-dependencies]
 cc = "1.2.63"
