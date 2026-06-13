@@ -3,14 +3,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-struct RustVec {
-    uint8_t *ptr;
-    size_t len;
-    size_t capacity;
-};
-
-struct RustVec new_cvec(size_t capacity);
-
 enum FastbootReply {
     FR_ERROR = 0,
     FR_NO_HEADER,
@@ -19,8 +11,15 @@ enum FastbootReply {
     FR_FAIL,
 };
 
+struct CVec {
+    char *ptr;
+    size_t len;
+    size_t capacity;
+};
+
 struct FastbootDevice {
-    char _context[8 + 8 + 128 + 112];
+    char _inner[8 + 8 + 128 + 112];
+    struct CVec vec;
 };
 
 typedef struct FastbootDevice *HANDLE;
@@ -43,8 +42,9 @@ int is_end_of_archive(const char *p);
 void trim(char *ptr);
 
 
-bool fastboot_cmd_ffi(HANDLE handle, struct RustVec *cvec, const char *var, char *str_buf, size_t len);
-bool fastboot_download_ffi(HANDLE handle, struct RustVec *cvec, const char *data, size_t len);
-uint32_t getvar_u32_ffi(HANDLE handle, struct RustVec *cvec, const char *var, uint32_t fallback);
+enum FastbootReply get_reply_ffi(HANDLE handle);
+bool fastboot_cmd_ffi(HANDLE handle, const char *cmd, char *reply_buf, size_t reply_buf_len);
+bool fastboot_download_ffi(HANDLE handle, const char *data, size_t len);
+uint32_t getvar_u32_ffi(HANDLE handle, const char *cmd, uint32_t fallback);
 
 #endif //NEWFLASHER_H
