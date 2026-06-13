@@ -42,33 +42,33 @@ mod tests {
     fn test_fastboot_vars() {
         let mut usb = get_device().lock().unwrap();
 
-        assert_eq!(reply_str(&mut usb, b"getvar:max-download-size").parse::<u32>().unwrap(), 805306368);
-        assert_eq!(reply_str(&mut usb, b"getvar:product"), "XQ-EC72");
-        assert_eq!(reply_str(&mut usb, b"getvar:version"), "0.4");
-        assert_eq!(reply_str(&mut usb, b"getvar:version-bootloader"), "8650-0001_X_Boot_SM8650_LA1.0_U_36");
-        assert_eq!(reply_str(&mut usb, b"getvar:serialno"), std::env::var("SERIAL_NO").unwrap().as_str());
-        assert_eq!(reply_str(&mut usb, b"getvar:secure"), "no");
-        assert_eq!(reply_str(&mut usb, b"getvar:Sector-size"), "4096");
-        assert_eq!(reply_str(&mut usb, b"getvar:Loader-version"), "8650-0001_X_Boot_SM8650_LA1.0_U_36");
-        assert_eq!(reply_str(&mut usb, b"getvar:Phone-id"), std::env::var("PHONE_ID").unwrap().as_str());
-        assert_eq!(reply_str(&mut usb, b"getvar:Device-id"), std::env::var("DEVICE_ID").unwrap().as_str());
-        assert_eq!(reply_str(&mut usb, b"getvar:Platform-id"), "202270E1");
-        assert_eq!(reply_str(&mut usb, b"getvar:Rooting-status"), "ROOTED");
-        assert_eq!(reply_str(&mut usb, b"getvar:Ufs-info"), "KIOXIA,THGJFLT1E45BATPB,0100");
-        assert_eq!(reply_str(&mut usb, b"getvar:Emmc-info"), "Emmc-info not supported");
-        assert_eq!(reply_str(&mut usb, b"getvar:Default-security"), "ON");
-        assert_eq!(reply_str(&mut usb, b"getvar:Keystore-counter"), "2");
-        assert_eq!(reply_str(&mut usb, b"getvar:Security-state"), std::env::var("SECURITY_STATE").unwrap().as_str());
-        assert_eq!(reply_str(&mut usb, b"getvar:S1-root"), "S1_Root_398d");
-        assert_eq!(reply_str(&mut usb, b"getvar:Sake-root"), "5515");
+        assert_eq!(reply_str(&mut usb, "getvar:max-download-size").parse::<u32>().unwrap(), 805306368);
+        assert_eq!(reply_str(&mut usb, "getvar:product"), "XQ-EC72");
+        assert_eq!(reply_str(&mut usb, "getvar:version"), "0.4");
+        assert_eq!(reply_str(&mut usb, "getvar:version-bootloader"), "8650-0001_X_Boot_SM8650_LA1.0_U_36");
+        assert_eq!(reply_str(&mut usb, "getvar:serialno"), std::env::var("SERIAL_NO").unwrap().as_str());
+        assert_eq!(reply_str(&mut usb, "getvar:secure"), "no");
+        assert_eq!(reply_str(&mut usb, "getvar:Sector-size"), "4096");
+        assert_eq!(reply_str(&mut usb, "getvar:Loader-version"), "8650-0001_X_Boot_SM8650_LA1.0_U_36");
+        assert_eq!(reply_str(&mut usb, "getvar:Phone-id"), std::env::var("PHONE_ID").unwrap().as_str());
+        assert_eq!(reply_str(&mut usb, "getvar:Device-id"), std::env::var("DEVICE_ID").unwrap().as_str());
+        assert_eq!(reply_str(&mut usb, "getvar:Platform-id"), "202270E1");
+        assert_eq!(reply_str(&mut usb, "getvar:Rooting-status"), "ROOTED");
+        assert_eq!(reply_str(&mut usb, "getvar:Ufs-info"), "KIOXIA,THGJFLT1E45BATPB,0100");
+        assert_eq!(reply_str(&mut usb, "getvar:Emmc-info"), "Emmc-info not supported");
+        assert_eq!(reply_str(&mut usb, "getvar:Default-security"), "ON");
+        assert_eq!(reply_str(&mut usb, "getvar:Keystore-counter"), "2");
+        assert_eq!(reply_str(&mut usb, "getvar:Security-state"), std::env::var("SECURITY_STATE").unwrap().as_str());
+        assert_eq!(reply_str(&mut usb, "getvar:S1-root"), "S1_Root_398d");
+        assert_eq!(reply_str(&mut usb, "getvar:Sake-root"), "5515");
 
-        usb.get_data(b"Get-root-key-hash").unwrap();
+        usb.get_data("Get-root-key-hash").unwrap();
         assert_eq!(usb.reply.len(), 48);
         assert_eq!(usb.reply.iter().map(|b| format!("{:02X}", b)).collect::<String>(), std::env::var("ROOT_KEY_HASH").unwrap());
 
-        assert_eq!(reply_str(&mut usb, b"getvar:slot-count"), "2");
-        assert_eq!(reply_str(&mut usb, b"getvar:current-slot"), "a");
-        assert_eq!(reply_str(&mut usb, b"getvar:Battery"), "Battery not supported");
+        assert_eq!(reply_str(&mut usb, "getvar:slot-count"), "2");
+        assert_eq!(reply_str(&mut usb, "getvar:current-slot"), "a");
+        assert_eq!(reply_str(&mut usb, "getvar:Battery"), "Battery not supported");
     }
 
     #[test]
@@ -76,7 +76,7 @@ mod tests {
         let mut usb = get_device().lock().unwrap();
 
         usb.download(&[0u8]).unwrap();
-        usb.command_expect(b"Write-TA:2:10100", FastbootHeader::Okay).unwrap();
+        usb.command_expect("Write-TA:2:10100", FastbootHeader::Okay).unwrap();
     }
 
     #[test]
@@ -92,6 +92,15 @@ mod tests {
 
         transfer_cms(&mut usb, &mut fst, "partitionimage_0").unwrap();
     }
+
+    // #[test]
+    // fn test_firmware_history() {
+    //     let mut usb = get_device().lock().unwrap();
+    //
+    //     usb.get_data("Read-TA:2:2475").unwrap();
+    //
+    //     println!("{:#?}", usb.reply);
+    // }
 
     #[test]
     fn test_files() {
@@ -118,8 +127,8 @@ mod tests {
         assert_eq!(parseoct(c"a777z".as_ptr(), 5), 0b111111111);
     }
 
-    fn reply_str<'a>(usb: &'a mut FastbootDevice, var: &[u8]) -> &'a str {
-        if let Err(e) = usb.command(var) {
+    fn reply_str<'a>(usb: &'a mut FastbootDevice, cmd: &str) -> &'a str {
+        if let Err(e) = usb.command(cmd) {
             error!("{}", e);
             return "";
         };

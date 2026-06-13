@@ -46,7 +46,7 @@ pub fn process_sins_rs(
     }
 
     let mut keep_userdata: bool = true;
-    let mut current_slot: *const c_char = CStr::from_bytes_until_nul(b"a\0").unwrap().as_ptr();
+    let mut current_slot: *const c_char = CStr::from_bytes_until_nul(b"a\0")?.as_ptr();
 
     let mut magic_numbers = [0u8; 2];
     let mut sin_file = File::open(&sin_path)?;
@@ -118,7 +118,7 @@ pub fn process_sins_rs(
         let file_size = entry.size();
         let entry_name = CStr::from_bytes_until_nul(&entry.header().as_ustar().unwrap().name)?.to_string_lossy().to_string();
         if i == 0 {
-            transfer_cms(usb, &mut entry, &entry_name).unwrap();
+            transfer_cms(usb, &mut entry, &entry_name)?;
         } else {
             panic!();
             println!(" - Uploading sparse chunk {}", entry_name);
@@ -136,7 +136,7 @@ pub fn process_sins_rs(
 
                 if slot == b"a" || slot == b"b" {
                     let getvar_cmd = format!("getvar:has-slot:{flash_prefix}");
-                    usb.command(getvar_cmd.as_bytes()).unwrap_or_else(|e| panic!("Failed to execute {getvar_cmd}! {e}"));
+                    usb.command(getvar_cmd.as_str()).unwrap_or_else(|e| panic!("Failed to execute {getvar_cmd}! {e}"));
 
                     has_slot = usb.reply == b"yes";
                     if has_slot {

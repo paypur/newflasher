@@ -14,28 +14,14 @@ use std::{io, ptr, slice};
 
 // C globals and functions
 unsafe extern "C" {
-    pub fn display_buffer_hex_ascii(message: *const c_char, buffer: *const c_char, size: usize);
 }
-
-pub fn new_cvec(capacity: usize) -> ByteVec {
-    into_cvec(Vec::with_capacity(capacity))
-}
-
-fn into_cvec(vec: Vec<u8>) -> ByteVec {
-    ByteVec::from(vec)
-}
-
-fn from_cvec(cvec: &ByteVec) -> Vec<u8> {
-    vec![]
-}
-
-fn return_vec(cvec: &mut ByteVec, vec: Vec<u8>) {}
 
 #[unsafe(no_mangle)]
-pub extern "C" fn get_flash_mode(vid: c_ushort, pid: c_ushort) -> *mut FastbootDevice {
+pub extern "C" fn get_flash_mode(vid: c_ushort, pid: c_ushort) -> *mut FastbootDeviceFFI {
     let dev = get_flash_mode_rs(vid, pid);
+    let ffi = FastbootDeviceFFI::from(dev);
+    let handle = Box::new(ffi);
     // technically a memory leak, but we only call this function once
-    let handle = Box::new(dev);
     Box::into_raw(handle)
 }
 
@@ -53,80 +39,73 @@ pub fn get_flash_mode_rs(vid: u16, pid: u16) -> FastbootDevice {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn transfer_bulk_ffi(unsafe_handle: *mut FastbootDevice, ep: i32, chars: *mut u8, len: usize, capacity: usize) -> usize {
-    let handle = unsafe { &mut *unsafe_handle };
+pub extern "C" fn transfer_bulk_ffi(device_ptr: *mut FastbootDeviceFFI, ep: i32, chars: *mut u8, len: usize) -> usize {
+    let mut usb: FastbootDevice = device_ptr.into();
 
-    match ep {
-        0 => {
-            let mut vec = unsafe { Vec::from_raw_parts(chars, len, capacity) };
-            let res = handle.read();
-            let _ = vec.into_raw_parts(); // make sure rust doesnt drop this
-            res
-        },
-        1 => handle.write(unsafe { slice::from_raw_parts(chars, len) }),
+    let res = match ep {
+        0 => usb.read(),
+        1 => usb.write(unsafe { slice::from_raw_parts(chars, len) }),
         _ => panic!("Invalid endpoint direction: {:?}", ep)
-    }.unwrap_or(0)
+    }.unwrap_or(0);
+
+    unsafe { ptr::write(device_ptr, FastbootDeviceFFI::from(usb)) };
+    res
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn get_reply_ffi(unsafe_handle: *mut FastbootDevice, cvec: &mut ByteVec, exact: i32) -> FastbootHeader {
-    let handle = unsafe { &mut *unsafe_handle };
-    let mut vec = from_cvec(cvec);
-    let res = handle.read_reply();
-    return_vec(cvec, vec);
-    res.unwrap_or_else(|_| FastbootHeader::Error)
+pub extern "C" fn get_reply_ffi(device_ptr: *mut FastbootDeviceFFI) -> FastbootHeader {
+    let mut usb: FastbootDevice = device_ptr.into();
+    let res = usb.read_reply().unwrap_or_else(|_| FastbootHeader::Error);
+
+    unsafe { ptr::write(device_ptr, FastbootDeviceFFI::from(usb)) };
+    res
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn fastboot_cmd_ffi(usb_handle: *mut FastbootDevice, cvec: &mut ByteVec, cmd: *const c_char, str: *mut u8, mut len: usize) -> bool {
-    let usb = unsafe { &mut *usb_handle };
-    let mut buffer = from_cvec(cvec);
-    let cstr = unsafe { CStr::from_ptr(cmd) };
+pub extern "C" fn fastboot_cmd_ffi(device_ptr: *mut FastbootDeviceFFI, cmd: *const c_char, str: *mut u8, len: usize) -> bool {
+    let mut usb: FastbootDevice = device_ptr.into();
+    let cstr = unsafe { CStr::from_ptr(cmd) }.to_string_lossy();
 
-    if let Err(e) = usb.command(cstr.to_bytes()) {
+    if let Err(e) = usb.command(cstr.as_ref()) {
         error!("{}", e);
+        unsafe { ptr::write(device_ptr, FastbootDeviceFFI::from(usb)) };
         return false;
     }
 
     if str as *const u8 != ptr::null() && len != 0 {
-        len = len.min(buffer.len());
+        let min_len = len.min(usb.reply.len());
 
-        let string = unsafe { slice::from_raw_parts_mut(str, len) };
-        string[..len].clone_from_slice(&buffer.as_slice()[..len]);
+        let string = unsafe { slice::from_raw_parts_mut(str, min_len) };
+        string[..min_len].clone_from_slice(&usb.reply[..min_len]);
 
         // write the null terminator for C strings
-        string[min(len, string.len() - 1)] = 0;
+        string[min(min_len, string.len() - 1)] = 0;
     }
 
-    return_vec(cvec, buffer);
+    unsafe { ptr::write(device_ptr, FastbootDeviceFFI::from(usb)) };
     true
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn fastboot_download_ffi(usb_handle: *mut FastbootDevice, cvec: &mut ByteVec, data: *const u8, len: usize) -> bool {
-    let usb = unsafe { &mut *usb_handle };
-    let mut buffer = from_cvec(cvec);
+pub extern "C" fn fastboot_download_ffi(device_ptr: *mut FastbootDeviceFFI, data: *const u8, len: usize) -> bool {
+    let mut usb: FastbootDevice = device_ptr.into();
     let slice = unsafe { slice::from_raw_parts(data, len) };
 
     if let Err(e) = usb.download(slice) {
         error!("{}", e);
+        unsafe { ptr::write(device_ptr, FastbootDeviceFFI::from(usb)) };
         return false;
     }
 
+    unsafe { ptr::write(device_ptr, FastbootDeviceFFI::from(usb)) };
     true
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn getvar_u32_ffi(usb_handle: *mut FastbootDevice, cvec: &mut ByteVec, cmd: *const c_char, fallback: u32) -> u32 {
-    let usb = unsafe { &mut *usb_handle };
-    let mut buffer = from_cvec(cvec);
+pub extern "C" fn getvar_u32_ffi(device_ptr: *mut FastbootDeviceFFI, cmd: *const c_char, fallback: u32) -> u32 {
+    let mut usb: FastbootDevice = device_ptr.into();
+    let res = usb.getvar_u32(unsafe { CStr::from_ptr(cmd) }.to_string_lossy().as_ref(), fallback);
 
-    let u = usb.getvar_u32(unsafe { CStr::from_ptr(cmd) }.to_bytes(), fallback);
-    return_vec(cvec, buffer);
-    u
-}
-
-pub fn u32_from_bytes(slice: &[u8]) -> u32 {
-    let str = str::from_utf8(slice).expect(&format!("Failed to parse {:?} as str", slice));
-    str.parse::<u32>().expect(&format!("Failed to parse {:?} as u32", str))
+    unsafe { ptr::write(device_ptr, FastbootDeviceFFI::from(usb)) };
+    res
 }

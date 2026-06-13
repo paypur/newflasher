@@ -174,8 +174,6 @@
 
 
 static char tmp[4096];
-struct RustVec tmp_reply = {NULL, 0, 0};
-static unsigned long get_reply_len;
 static bool okay_replied = false;
 static char product[12];
 static char version[64];
@@ -579,7 +577,7 @@ struct FastbootDevice *get_flash_mode(unsigned short VID, unsigned short PID);
 	return usb;
 }*/
 
-int usb_close(struct FastbootDevice *h);
+// int usb_close(struct FastbootDevice *h);
 /*{
 	int fd;
 
@@ -955,199 +953,10 @@ static unsigned long transfer_bulk_async(HANDLE dev, int ep, char *bytes, unsign
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #else
 
-static unsigned long transfer_bulk_ffi(struct FastbootDevice *h, int ep, const void *_bytes, unsigned long size, int exact);
-/*{
-	char *bytes = (char *)_bytes;
-	unsigned long count = 0;
-	unsigned long size_tot = size;
-	struct usbdevfs_bulktransfer bulk;
-	int n = 0;
+static unsigned long transfer_bulk_ffi(HANDLE h, int ep, const void *_bytes, unsigned long size);
 
-	if (ep == EP_IN)
-	{
-		if (h->ep_in == 0)
-		{
-			printf(" - ep_in is not 0x81!!!\n");
-			return 0;
-		}
-
-		while (size > 0)
-		{
-			int xfer = (size > MAX_USBFS_BULK_SIZE) ? MAX_USBFS_BULK_SIZE : size;
-
-			bulk.ep = h->ep_in;
-			bulk.len = xfer;
-			bulk.data = bytes;
-			bulk.timeout = timeout;
-
-			do
-			{
-				n = ioctl(h->desc, USBDEVFS_BULK, &bulk);
-				if (n < 0)
-				{
-					printf(" - (ep_in) ERROR: n = %d, errno = %d (%s)\n",n, errno, strerror(errno));
-					return 0;
-				}
-			}
-			while(n < 0);
-
-			count += n;
-			size -= n;
-			bytes += n;
-
-			if (n < xfer)
-				break;
-		}
-	}
-
-	if (ep == EP_OUT)
-	{
-		if (h->ep_out == 0)
-		{
-			printf(" - ep_out is not 0x01!!!\n");
-			return 0;
-		}
-
-		if (size == 0)
-		{
-			bulk.ep = h->ep_out;
-			bulk.len = 0;
-			bulk.data = bytes;
-			bulk.timeout = 0;
-
-			n = ioctl(h->desc, USBDEVFS_BULK, &bulk);
-			if (n != 0)
-			{
-				printf(" - (ep_out size=0)ERROR: n = %d, errno = %d (%s)\n", n, errno, strerror(errno));
-				return 0;
-			}
-			return 0;
-		}
-
-		while (size > 0)
-		{
-			int xfer = (size > MAX_USBFS_BULK_SIZE) ? MAX_USBFS_BULK_SIZE : size;
-
-			bulk.ep = h->ep_out;
-			bulk.len = xfer;
-			bulk.data = bytes;
-			bulk.timeout = timeout;
-
-			n = ioctl(h->desc, USBDEVFS_BULK, &bulk);
-			if (n != xfer)
-			{
-				printf(" - (ep_out size=%d)ERROR: n = %d, errno = %d (%s)\n", xfer, n, errno, strerror(errno));
-				return 0;
-			}
-
-			count += xfer;
-			size -= xfer;
-			bytes += xfer;
-		}
-	}
-
-	if (exact)
-	{
-		if (count != size_tot)
-		{
-			printf(" - Error %s! Need nBytes: 0x%lx but done: 0x%lx\n", (ep == EP_IN) ? "read" : "write", size_tot, count);
-			display_buffer_hex_ascii("nBytes", bytes, count);
-			return 0;
-		}
-	}
-#if 0
-	if (ep == EP_IN)
-	{
-		printf(" - Successfully read 0x%lx bytes from handle.\n", count);
-		display_buffer_hex_ascii("Raw input ", bytes, count);
-	}
-
-	if (ep == EP_OUT)
-	{
-		printf(" - Successfully write 0x%lx bytes to handle.\n", count);
-		display_buffer_hex_ascii("Raw output ", bytes, count);
-	}
-#endif
-	return count;
-}*/
 #endif
 #endif
-
-static enum FastbootReply get_reply_ffi(HANDLE dev, struct RustVec *vec, int exact);
-/*{
-	unsigned long ret_len = 0;
-	get_reply_len = 0;
-
-	ret_len = transfer_bulk_ffi(dev, ep, bytes, size, timeout, exact);
-	/*display_buffer_hex_ascii("Replied with ", bytes, ret_len);#1#
-
-	if (!ret_len)
-	{
-		//printf(" - reply: null!\n");
-		return false;
-	}
-
-	if (ret_len > BUFF_MAX)
-	{
-		printf("Bug!!! ret_len: 0x%x > BUFF_MAX: 0x%x\n", ret_len, BUFF_MAX);
-		return false;
-	}
-
-	if (ret_len >= 4)
-	{
-
-		if ((memcmp(bytes, "OKAY", 4) == 0 || memcmp(bytes, "FAIL", 4) == 0) && ret_len == 4) {
-			memcpy(tmp_reply.ptr, bytes, ret_len);
-			tmp_reply.ptr[ret_len] = '\0';
-			get_reply_len = ret_len;
-			return true;
-		}
-
-		if (memcmp(bytes, "OKAY", 4) == 0 && ret_len > 4)
-		{
-			memcpy(tmp_reply.ptr, bytes+4, ret_len-4);
-			tmp_reply.ptr[ret_len-4] = '\0';
-			get_reply_len = ret_len-4;
-			return true;
-		}
-
-		if (memcmp(bytes, "FAIL", 4) == 0 && ret_len > 4) {
-			memcpy(tmp_reply.ptr, bytes, ret_len);
-			tmp_reply.ptr[ret_len] = '\0';
-			get_reply_len = ret_len;
-			return true;
-		}
-
-		if (memcmp(bytes, "DATA", 4) == 0 && ret_len != 12)
-		{
-			// xperia 10 mark 3 XQ-BT41 send 13 bytes where last byte is null termination, fixing it to 12
-			if (ret_len == 13)
-			{
-				ret_len = 12;
-				goto solve_xqbt41;
-			}
-
-			printf(" - Errornous DATA reply!\n");
-			display_buffer_hex_ascii("Replied with ", bytes, ret_len);
-			return false;
-		}
-
-solve_xqbt41:
-		if (memcmp(bytes, "DATA", 4) == 0 && ret_len == 12)
-		{
-			memcpy(tmp_reply.ptr, bytes, ret_len);
-			tmp_reply.ptr[ret_len] = '\0';
-			get_reply_len = ret_len;
-			return true;
-		}
-	}
-
-	memcpy(tmp_reply.ptr, bytes, ret_len);
-	tmp_reply.ptr[ret_len] = '\0';
-	get_reply_len = ret_len;
-
-	return true;
-}*/
 
 static int check_valid_unit(char *in) {
 	int i, ret=0;
@@ -1657,19 +1466,19 @@ repeat_here:
 			snprintf(command, sizeof(command), "%s:%08x", is_2021_device ? "download" : "signature", fp_size);
 			printf("      %s\n", command);
 
-			if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), 1) < 1) {
+			if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command)) < 1) {
 				printf("      Error writing signature command!\n");
 				return 0;
 			}
 
-			if (!get_reply_ffi(dev, &tmp_reply, 0)) {
+			if (!get_reply_ffi(dev)) {
 				printf("      Error, no signature DATA reply!\n");
 				return 0;
 			}
 
-			if (strlen(tmp_reply.ptr) != 12)
+			if (strlen(dev->vec.ptr) != 12)
 			{
-				if (memcmp(tmp_reply.ptr, "FAIL", 4) == 0 && !is_2021_device)
+				if (memcmp(dev->vec.ptr, "FAIL", 4) == 0 && !is_2021_device)
 				{
 					printf("      device from 2021 and up?\n");
 					is_2021_device = true;
@@ -1677,7 +1486,7 @@ repeat_here:
 				}
 				else
 				{
-					printf("      Error, signature DATA reply size: %zu less than expected: 12!\n", strlen(tmp_reply.ptr));
+					printf("      Error, signature DATA reply size: %zu less than expected: 12!\n", strlen(dev->vec.ptr));
 					return 0;
 				}
 			}
@@ -1685,17 +1494,17 @@ repeat_here:
 
 			if (is_2021_device)
 			{
-				if (memcmp(tmp_reply.ptr+4, command+9, 8) != 0)
+				if (memcmp(dev->vec.ptr+4, command+9, 8) != 0)
 				{
-					printf("      Error, signature DATA reply string: %s is not equal to expected: DATA%s!\n", tmp_reply, command+10);
+					printf("      Error, signature DATA reply string: %s is not equal to expected: DATA%s!\n", dev->vec.ptr, command+10);
 					return 0;
 				}
 			}
 			else
 			{
-				if (memcmp(tmp_reply.ptr+4, command+10, 8) != 0)
+				if (memcmp(dev->vec.ptr+4, command+10, 8) != 0)
 				{
-					printf("      Error, signature DATA reply string: %s is not equal to expected: DATA%s!\n", tmp_reply, command+10);
+					printf("      Error, signature DATA reply string: %s is not equal to expected: DATA%s!\n", dev->vec.ptr, command+10);
 					return 0;
 				}
 			}
@@ -1721,7 +1530,7 @@ repeat_here:
 
 			fclose(fp);
 
-			if (transfer_bulk_ffi(dev, EP_OUT, buffer, fp_size, 1) < 1) {
+			if (transfer_bulk_ffi(dev, EP_OUT, buffer, fp_size) < 1) {
 				printf("      Error writing signature!\n");
 				if (buffer) free(buffer);
 				return 0;
@@ -1729,22 +1538,22 @@ repeat_here:
 
 			if (buffer) free(buffer);
 
-			if (!get_reply_ffi(dev, &tmp_reply, 0)) {
+			if (!get_reply_ffi(dev)) {
 				printf("      Error, no sinature OKAY reply!\n");
 				return 0;
 			}
 
-			if (strlen(tmp_reply.ptr) < 4) {
-				printf("      Error, signature reply less than 4, got: %zu bytes!\n", strlen(tmp_reply.ptr));
+			if (strlen(dev->vec.ptr) < 4) {
+				printf("      Error, signature reply less than 4, got: %zu bytes!\n", strlen(dev->vec.ptr));
 				return 0;
 			}
 
-			if (memcmp(tmp_reply.ptr, "OKAY", 4) == 0) {
+			if (memcmp(dev->vec.ptr, "OKAY", 4) == 0) {
 				printf("      OKAY.\n");
 			}
 			else
 			{
-				printf("      Error, didn't got signature OKAY reply! Got reply: %s\n", tmp_reply.ptr);
+				printf("      Error, didn't got signature OKAY reply! Got reply: %s\n", dev->vec.ptr);
 				return 0;
 			}
 
@@ -1753,21 +1562,21 @@ repeat_here:
 				snprintf(command, sizeof(command), "signature");
 				printf("      %s\n", command);
 
-				if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), 1) < 1)
+				if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command)) < 1)
 				{
 					printf("      Error writing signature command!\n");
 					return 0;
 				}
 
-				if (!get_reply_ffi(dev, &tmp_reply, 0))
+				if (!get_reply_ffi(dev))
 				{
 					printf("      Error, no signature OKAY reply!\n");
 					return 0;
 				}
 
-				if (memcmp(tmp_reply.ptr, "OKAY", 4) != 0)
+				if (memcmp(dev->vec.ptr, "OKAY", 4) != 0)
 				{
-					printf("      Error, signature OKAY reply, got reply: %s!\n", tmp_reply.ptr);
+					printf("      Error, signature OKAY reply, got reply: %s!\n", dev->vec.ptr);
 					return 0;
 				}
 				else
@@ -1796,23 +1605,23 @@ repeat_here:
 			snprintf(command, sizeof(command), "download:%08x", fp_size);
 			printf("      %s\n", command);
 
-			if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), 1) < 1) {
+			if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command)) < 1) {
 				printf("      Error writing download command!\n");
 				return 0;
 			}
 
-			if (!get_reply_ffi(dev, &tmp_reply, 0)) {
+			if (!get_reply_ffi(dev)) {
 				printf("      Error, no download DATA reply!\n");
 				return 0;
 			}
 
-			if (strlen(tmp_reply.ptr) != 12) {
-				printf("      Error, download DATA reply size: %zu less than expected: 12!\n", strlen(tmp_reply.ptr));
+			if (strlen(dev->vec.ptr) != 12) {
+				printf("      Error, download DATA reply size: %zu less than expected: 12!\n", strlen(dev->vec.ptr));
 				return 0;
 			}
 
-			if (memcmp(tmp_reply.ptr+4, command+9, 8) != 0) {
-				printf("      Error, download DATA reply string: %s is not equal to expected: DATA%s!\n", tmp_reply, command+9);
+			if (memcmp(dev->vec.ptr+4, command+9, 8) != 0) {
+				printf("      Error, download DATA reply string: %s is not equal to expected: DATA%s!\n", dev->vec.ptr, command+9);
 				return 0;
 			}
 
@@ -1856,7 +1665,7 @@ repeat_here:
 					}
 				}
 
-				if (transfer_bulk_ffi(dev, EP_OUT, buffer, fp_read, 1) < 1) {
+				if (transfer_bulk_ffi(dev, EP_OUT, buffer, fp_read) < 1) {
 					printf("         Error uploading chunk %d!\n", g);
 					fclose(fp);
 					if (buffer) free(buffer);
@@ -1869,18 +1678,18 @@ repeat_here:
 
 			fclose(fp);
 
-			if (!get_reply_ffi(dev, &tmp_reply, 0)) {
+			if (!get_reply_ffi(dev)) {
 				printf("      Error, no download OKAY reply!\n");
 				return 0;
 			}
 
-			if (strlen(tmp_reply.ptr) < 4) {
-				printf("      Error, download reply less than 4, got: %zu bytes!\n", strlen(tmp_reply.ptr));
+			if (strlen(dev->vec.ptr) < 4) {
+				printf("      Error, download reply less than 4, got: %zu bytes!\n", strlen(dev->vec.ptr));
 				return 0;
 			}
 
-			if (memcmp(tmp_reply.ptr, "OKAY", 4) != 0) {
-				printf("      Error, didn't got download OKAY reply! Got reply: %s\n", tmp_reply.ptr);
+			if (memcmp(dev->vec.ptr, "OKAY", 4) != 0) {
+				printf("      Error, didn't got download OKAY reply! Got reply: %s\n", dev->vec.ptr);
 				return 0;
 			}
 
@@ -1893,19 +1702,19 @@ repeat_here:
 					if (memcmp(current_slot, "a", 1) == 0 || memcmp(current_slot, "b", 1) == 0)
 					{
 						snprintf(command, sizeof(command), "getvar:has-slot:%s", flashfile);
-						if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), 1) < 1) {
+						if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command)) < 1) {
 							printf(" - Error writing command %s!\n", command);
 							return 0;
 						}
 
-						if (!get_reply_ffi(dev, &tmp_reply, 0)) {
+						if (!get_reply_ffi(dev)) {
 							printf("      Error, no %s reply!\n", command);
 							return 0;
 						}
 
-						if (memcmp(tmp_reply.ptr, "yes", 3) == 0)
+						if (memcmp(dev->vec.ptr, "yes", 3) == 0)
 						{
-							printf("      Partition: %s have slot: %s\n", flashfile, tmp_reply);
+							printf("      Partition: %s have slot: %s\n", flashfile, dev->vec.ptr);
 							has_slot = true;
 						}
 
@@ -1941,23 +1750,23 @@ repeat_here:
 
 					printf("      %s\n", command);
 
-					if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), 1) < 1) {
+					if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command)) < 1) {
 						printf("      Error writing %s!\n", command);
 						return 0;
 					}
 
-					if (!get_reply_ffi(dev, &tmp_reply, 0)) {
+					if (!get_reply_ffi(dev)) {
 						printf("      Error, no erase OKAY reply!\n");
 						return 0;
 					}
 
-					if (strlen(tmp_reply.ptr) < 4) {
-						printf("      Error, erase reply less than 4, got: %zu bytes!\n", strlen(tmp_reply.ptr));
+					if (strlen(dev->vec.ptr) < 4) {
+						printf("      Error, erase reply less than 4, got: %zu bytes!\n", strlen(dev->vec.ptr));
 						return 0;
 					}
 
-					if (memcmp(tmp_reply.ptr, "OKAY", 4) != 0) {
-						printf("      Error, didn't got erase OKAY reply! Got reply: %s\n", tmp_reply.ptr);
+					if (memcmp(dev->vec.ptr, "OKAY", 4) != 0) {
+						printf("      Error, didn't got erase OKAY reply! Got reply: %s\n", dev->vec.ptr);
 						return 0;
 					}
 
@@ -2003,23 +1812,23 @@ repeat_here:
 				printf("      %s\n", command);
 			}
 
-			if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), 1) < 1) {
+			if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command)) < 1) {
 				printf("      Error writing %s!\n", command);
 				return 0;
 			}
 
-			if (!get_reply_ffi(dev, &tmp_reply, 0)) {
+			if (!get_reply_ffi(dev)) {
 				printf("      Error, no %s OKAY reply!\n", endcommand);
 				return 0;
 			}
 
-			if (strlen(tmp_reply.ptr) < 4) {
-				printf("      Error, %s reply less than 4, got: %zu bytes!\n", endcommand, strlen(tmp_reply.ptr));
+			if (strlen(dev->vec.ptr) < 4) {
+				printf("      Error, %s reply less than 4, got: %zu bytes!\n", endcommand, strlen(dev->vec.ptr));
 				return 0;
 			}
 
-			if (memcmp(tmp_reply.ptr, "OKAY", 4) != 0) {
-				printf("      Error, didn't got %s OKAY reply! Got reply: %s\n", endcommand, tmp_reply);
+			if (memcmp(dev->vec.ptr, "OKAY", 4) != 0) {
+				printf("      Error, didn't got %s OKAY reply! Got reply: %s\n", endcommand, dev->vec.ptr);
 				return 0;
 			}
 
@@ -2451,53 +2260,53 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 						snprintf(command, sizeof(command), "download:%08x", unit_sz);
 						printf("      %s\n", command);
 
-						if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), 1) < 1) {
+						if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command)) < 1) {
 							printf("      Error writing download command!\n");
 							ret = 0;
 							goto finish_proced_ta;
 						}
 
-						if (!get_reply_ffi(dev, &tmp_reply, 0)) {
+						if (!get_reply_ffi(dev)) {
 							printf("      Error, no download DATA reply!\n");
 							ret = 0;
 							goto finish_proced_ta;
 						}
 
-						if (strlen(tmp_reply.ptr) != 12) {
-							printf("      Error, download DATA reply size: %zu less than expected: 12!\n", strlen(tmp_reply.ptr));
+						if (strlen(dev->vec.ptr) != 12) {
+							printf("      Error, download DATA reply size: %zu less than expected: 12!\n", strlen(dev->vec.ptr));
 							ret = 0;
 							goto finish_proced_ta;
 						}
 
-						if (memcmp(tmp_reply.ptr+4, command+9, 8) != 0) {
-							printf("      Error, download DATA reply string: %s is not equal to expected: DATA%s!\n", tmp_reply, command+9);
+						if (memcmp(dev->vec.ptr+4, command+9, 8) != 0) {
+							printf("      Error, download DATA reply string: %s is not equal to expected: DATA%s!\n", dev->vec.ptr, command+9);
 							ret = 0;
 							goto finish_proced_ta;
 						}
 
 						if (unit_sz > 0)
 						{
-							if (transfer_bulk_ffi(dev, EP_OUT, unit_data, unit_sz, 1) < 1) {
+							if (transfer_bulk_ffi(dev, EP_OUT, unit_data, unit_sz) < 1) {
 								printf("      Error writing unit data!\n");
 								ret = 0;
 								goto finish_proced_ta;
 							}
 						}
 
-						if (!get_reply_ffi(dev, &tmp_reply, 0)) {
+						if (!get_reply_ffi(dev)) {
 							printf("      Error, no OKAY reply!\n");
 							ret = 0;
 							goto finish_proced_ta;
 						}
 
-						if (strlen(tmp_reply.ptr) < 4) {
-							printf("      Error, reply less than 4, got: %zu bytes!\n", strlen(tmp_reply.ptr));
+						if (strlen(dev->vec.ptr) < 4) {
+							printf("      Error, reply less than 4, got: %zu bytes!\n", strlen(dev->vec.ptr));
 							ret = 0;
 							goto finish_proced_ta;
 						}
 
-						if (memcmp(tmp_reply.ptr, "OKAY", 4) != 0) {
-							printf("      Error, didn't got OKAY reply! Got reply: %s\n", tmp_reply.ptr);
+						if (memcmp(dev->vec.ptr, "OKAY", 4) != 0) {
+							printf("      Error, didn't got OKAY reply! Got reply: %s\n", dev->vec.ptr);
 							ret = 0;
 							goto finish_proced_ta;
 						}
@@ -2507,26 +2316,26 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 						snprintf(command, sizeof(command), "Write-TA:%u:%u", partition, unit_dec);
 						printf("      %s\n", command);
 
-						if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command), 1) < 1) {
+						if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command)) < 1) {
 							printf("      Error writing command WriteTA!\n");
 							ret = 0;
 							goto finish_proced_ta;
 						}
 
-						if (!get_reply_ffi(dev, &tmp_reply, 0)) {
+						if (!get_reply_ffi(dev)) {
 							printf("      Error, no OKAY reply!\n");
 							ret = 0;
 							goto finish_proced_ta;
 						}
 
-						if (strlen(tmp_reply.ptr) < 4) {
-							printf("      Error, reply less than 4, got: %zu bytes!\n", strlen(tmp_reply.ptr));
+						if (strlen(dev->vec.ptr) < 4) {
+							printf("      Error, reply less than 4, got: %zu bytes!\n", strlen(dev->vec.ptr));
 							ret = 0;
 							goto finish_proced_ta;
 						}
 
-						if (memcmp(tmp_reply.ptr, "OKAY", 4) != 0) {
-							printf("      Error, didn't got OKAY reply! Got reply: %s\n", tmp_reply.ptr);
+						if (memcmp(dev->vec.ptr, "OKAY", 4) != 0) {
+							printf("      Error, didn't got OKAY reply! Got reply: %s\n", dev->vec.ptr);
 							ret = 0;
 							goto finish_proced_ta;
 						}
@@ -2641,8 +2450,6 @@ static unsigned long get_free_space(char *fnPath)
 
 int main(int argc, char *argv[])
 {
-	tmp_reply = new_cvec(4096);
-
 	FILE *fi = NULL;
 	int fld_cbck;
 	char fld[256];
@@ -3036,28 +2843,28 @@ int main(int argc, char *argv[])
 			}
 			else
 			{
-				display_buffer_hex_ascii("got first reply", tmp_reply, get_reply_len);
+				display_buffer_hex_ascii("got first reply", tmp_reply, dev->vec.len);
 
-				if (memcmp(tmp_reply.ptr, "FAIL", 4) == 0)
+				if (memcmp(dev->vec.ptr, "FAIL", 4) == 0)
 				{
-					printf("got fail reply: %s\n", tmp_reply.ptr);
+					printf("got fail reply: %s\n", dev->vec.ptr);
 					ret = 1;
 					goto endflashing;
 				}
 				else
 				{
-					if (memcmp(tmp_reply.ptr, "DATA", 4) == 0)
+					if (memcmp(dev->vec.ptr, "DATA", 4) == 0)
 					{
 						unsigned int data_len = 0;
 
-						if (get_reply_len != 12) {
+						if (dev->vec.len != 12) {
 							printf("Errornous DATA reply!\n");
-							display_buffer_hex_ascii("replied", tmp_reply, get_reply_len);
+							display_buffer_hex_ascii("replied", tmp_reply, dev->vec.len);
 							ret = 1;
 							goto endflashing;
 						}
 
-						sscanf(tmp_reply.ptr+4, "%08x", &data_len);
+						sscanf(dev->vec.ptr+4, "%08x", &data_len);
 
 						if (!data_len)
 						{
@@ -3070,12 +2877,12 @@ int main(int argc, char *argv[])
 								goto endflashing;
 							}
 
-							display_buffer_hex_ascii("got last reply", tmp_reply, get_reply_len);
+							display_buffer_hex_ascii("got last reply", tmp_reply, dev->vec.len);
 
-							if (strstr(tmp_reply.ptr, "OKAY") == NULL)
+							if (strstr(dev->vec.ptr, "OKAY") == NULL)
 							{
 								printf("Error, no OKAY reply!\n");
-								display_buffer_hex_ascii("got reply", tmp_reply, get_reply_len);
+								display_buffer_hex_ascii("got reply", tmp_reply, dev->vec.len);
 								ret = 1;
 								goto endflashing;
 							}
@@ -3116,7 +2923,7 @@ int main(int argc, char *argv[])
 									goto endflashing;
 								}
 
-								if (strstr(tmp_reply.ptr, "OKAY") == NULL)
+								if (strstr(dev->vec.ptr, "OKAY") == NULL)
 								{
 									printf("Error, no OKAY reply!\n");
 									free(data_buf);
@@ -3126,7 +2933,7 @@ int main(int argc, char *argv[])
 							}
 
 							FILE *dumpme = NULL;
-							display_buffer_hex_ascii("replied", tmp_reply, get_reply_len);
+							display_buffer_hex_ascii("replied", tmp_reply, dev->vec.len);
 							if ((dumpme = fopen64("dump.bin", "wb")) == NULL)
 							{
 								printf("dump.bin will not be created!\n");
@@ -3180,29 +2987,29 @@ int main(int argc, char *argv[])
 				}
 				else
 				{
-					//display_buffer_hex_ascii("got first reply", tmp_reply, get_reply_len);
+					//display_buffer_hex_ascii("got first reply", tmp_reply, dev->vec.len);
 
-					if (memcmp(tmp_reply.ptr, "FAIL", 4) == 0)
+					if (memcmp(dev->vec.ptr, "FAIL", 4) == 0)
 					{
-						printf("got fail reply: %s\n", tmp_reply.ptr);
+						printf("got fail reply: %s\n", dev->vec.ptr);
 						ret = 1;
 						goto endflashing;
 					}
 					else
 					{
-						if (memcmp(tmp_reply.ptr, "DATA", 4) == 0)
+						if (memcmp(dev->vec.ptr, "DATA", 4) == 0)
 						{
 							unsigned int data_len = 0;
 
-							if (get_reply_len != 12)
+							if (dev->vec.len != 12)
 							{
 								printf("Errornous DATA reply!\n");
-								display_buffer_hex_ascii("replied", tmp_reply, get_reply_len);
+								display_buffer_hex_ascii("replied", tmp_reply, dev->vec.len);
 								ret = 1;
 								goto endflashing;
 							}
 
-							sscanf(tmp_reply.ptr+4, "%08x", &data_len);
+							sscanf(dev->vec.ptr+4, "%08x", &data_len);
 
 							if (!data_len)
 							{
@@ -3215,12 +3022,12 @@ int main(int argc, char *argv[])
 									goto endflashing;
 								}
 
-								//display_buffer_hex_ascii("got last reply", tmp_reply, get_reply_len);
+								//display_buffer_hex_ascii("got last reply", tmp_reply, dev->vec.len);
 
-								if (strstr(tmp_reply.ptr, "OKAY") == NULL)
+								if (strstr(dev->vec.ptr, "OKAY") == NULL)
 								{
 									printf("Error, no OKAY reply!\n");
-									display_buffer_hex_ascii("got reply", tmp_reply, get_reply_len);
+									display_buffer_hex_ascii("got reply", tmp_reply, dev->vec.len);
 									ret = 1;
 									goto endflashing;
 								}
@@ -3268,7 +3075,7 @@ int main(int argc, char *argv[])
 										goto endflashing;
 									}
 
-									if (strstr(tmp_reply.ptr, "OKAY") == NULL)
+									if (strstr(dev->vec.ptr, "OKAY") == NULL)
 									{
 										printf("Error, no OKAY reply!\n");
 										free(data_buf);
@@ -3321,7 +3128,7 @@ int main(int argc, char *argv[])
 #else
 								snprintf(tmp, sizeof(tmp), "./tadump/tadump_%d.ta", i);
 #endif
-								//display_buffer_hex_ascii("replied", tmp_reply, get_reply_len);
+								//display_buffer_hex_ascii("replied", tmp_reply, dev->vec.len);
 
 								if ((dumpme = fopen64(tmp, "wb")) == NULL)
 								{
@@ -3392,43 +3199,43 @@ int main(int argc, char *argv[])
 
 /*=========================================  DEVICE INFO  ============================================*/
 
-	max_download_size = getvar_u32_ffi(dev, &tmp_reply, "getvar:max-download-size", 0);
-	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:product", product, sizeof(product));
-	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:version", version, sizeof(version));
-	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:version-bootloader", version_bootloader, sizeof(version_bootloader));
-	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:version-baseband", version_baseband, sizeof(version_baseband));
-	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:serialno", serialno, sizeof(serialno));
-	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:secure", secure, sizeof(secure));
-	sector_size = getvar_u32_ffi(dev, &tmp_reply, "getvar:Sector-size", 4096);
-	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:Loader-version", loader_version, sizeof(loader_version));
-	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:Phone-id", phone_id, sizeof(phone_id));
-	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:Device-id", device_id, sizeof(device_id));
-	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:Platform-id", platform_id, sizeof(platform_id));
-	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:Rooting-status", rooting_status, sizeof(rooting_status));
-	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:Ufs-info", ufs_info, sizeof(ufs_info));
-	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:Emmc-info", emmc_info, sizeof(emmc_info));
-	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:Default-security", default_security, sizeof(default_security));
-	keystore_counter = getvar_u32_ffi(dev, &tmp_reply, "getvar:Keystore-counter", 0);
-	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:Security-state", security_state, sizeof(security_state));
-	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:S1-root", s1_root, sizeof(s1_root));
-	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:Sake-root", sake_root, sizeof(sake_root));
+	max_download_size = getvar_u32_ffi(dev, "getvar:max-download-size", 0);
+	fastboot_cmd_ffi(dev, "getvar:product", product, sizeof(product));
+	fastboot_cmd_ffi(dev,"getvar:version", version, sizeof(version));
+	fastboot_cmd_ffi(dev, "getvar:version-bootloader", version_bootloader, sizeof(version_bootloader));
+	fastboot_cmd_ffi(dev, "getvar:version-baseband", version_baseband, sizeof(version_baseband));
+	fastboot_cmd_ffi(dev, "getvar:serialno", serialno, sizeof(serialno));
+	fastboot_cmd_ffi(dev,  "getvar:secure", secure, sizeof(secure));
+	sector_size = getvar_u32_ffi(dev, "getvar:Sector-size", 4096);
+	fastboot_cmd_ffi(dev, "getvar:Loader-version", loader_version, sizeof(loader_version));
+	fastboot_cmd_ffi(dev, "getvar:Phone-id", phone_id, sizeof(phone_id));
+	fastboot_cmd_ffi(dev, "getvar:Device-id", device_id, sizeof(device_id));
+	fastboot_cmd_ffi(dev, "getvar:Platform-id", platform_id, sizeof(platform_id));
+	fastboot_cmd_ffi(dev, "getvar:Rooting-status", rooting_status, sizeof(rooting_status));
+	fastboot_cmd_ffi(dev, "getvar:Ufs-info", ufs_info, sizeof(ufs_info));
+	fastboot_cmd_ffi(dev, "getvar:Emmc-info", emmc_info, sizeof(emmc_info));
+	fastboot_cmd_ffi(dev, "getvar:Default-security", default_security, sizeof(default_security));
+	keystore_counter = getvar_u32_ffi(dev, "getvar:Keystore-counter", 0);
+	fastboot_cmd_ffi(dev, "getvar:Security-state", security_state, sizeof(security_state));
+	fastboot_cmd_ffi(dev, "getvar:S1-root", s1_root, sizeof(s1_root));
+	fastboot_cmd_ffi(dev, "getvar:Sake-root", sake_root, sizeof(sake_root));
 
 	// this is also writing the key into tmp_reply, so we can convert it into hex in get_root_key_hash after
-	fastboot_cmd_ffi(dev, &tmp_reply, "Get-root-key-hash", get_root_key_hash, sizeof(get_root_key_hash));
+	fastboot_cmd_ffi(dev, "Get-root-key-hash", get_root_key_hash, sizeof(get_root_key_hash));
 	memset(get_root_key_hash, 0, sizeof(get_root_key_hash));
 
-	for (i=0, j=0; i < (int) tmp_reply.len; ++i, j+=2) {
-		sprintf(get_root_key_hash+j, "%02X", tmp_reply.ptr[i] & 0xff);
+	for (i=0, j=0; i < (int) dev->vec.len; ++i, j+=2) {
+		sprintf(get_root_key_hash+j, "%02X", dev->vec.ptr[i] & 0xff);
 	}
 	get_root_key_hash[j] = '\0';
 
-	fastboot_cmd_ffi(dev, &tmp_reply, "getvar:slot-count", slot_count, sizeof(slot_count));
+	fastboot_cmd_ffi(dev, "getvar:slot-count", slot_count, sizeof(slot_count));
 
 	if (slot_count[0] != 0) {
-		fastboot_cmd_ffi(dev, &tmp_reply, "getvar:current-slot", current_slot, sizeof(current_slot));
+		fastboot_cmd_ffi(dev, "getvar:current-slot", current_slot, sizeof(current_slot));
 	}
 
-	battery_level = getvar_u32_ffi(dev, &tmp_reply, "getvar:Battery", 0);
+	battery_level = getvar_u32_ffi(dev, "getvar:Battery", 0);
 
 	printf("Product: %s\n", product);
 	printf("Version: %s\n", version);
@@ -3472,13 +3279,13 @@ int main(int argc, char *argv[])
 
 	printf("\n");
 
-	if (!fastboot_download_ffi(dev, &tmp_reply, "\x01", 1)) {
+	if (!fastboot_download_ffi(dev, "\x01", 1)) {
 		printf(" - Error entering flash mode!\n");
 		ret = 1;
 		goto endflashing;
 	}
 
-	if (!fastboot_cmd_ffi(dev, &tmp_reply, "Write-TA:2:10100", NULL, 0))
+	if (!fastboot_cmd_ffi(dev, "Write-TA:2:10100", NULL, 0))
 	{
 		printf("Error writing TA 'go into flashmode'!\n");
 		ret = 1;
@@ -3535,95 +3342,100 @@ int main(int argc, char *argv[])
 			snprintf(tmp, sizeof(tmp), "%s", have_ufs ? "Get-ufs-info" : "Get-emmc-info");
 
 
-			// if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), 1) < 1)
-			// {
-			// 	printf(" - Error writing command %s!\n", tmp);
-			// 	ret = 1;
-			// 	goto getoutofflashing;
-			// }
-			// else
-			// {
-			// 	if (!get_reply_ffi(dev, &tmp_reply, 0))
-			// 	{
-			// 		ret = 1;
-			// 		goto getoutofflashing;
-			// 	}
-			//
-			// 	if (memcmp(tmp_reply.ptr, "DATA", 4) != 0)
-			// 	{
-			// 		printf(" - Error, no DATA reply!\n");
-			// 		ret = 1;
-			// 		goto getoutofflashing;
-			// 	}
-			//
-			// 	if (!get_reply_ffi(dev, &tmp_reply, 0))
-			// 	{
-			// 		ret = 1;
-			// 		goto getoutofflashing;
-			// 	}
-			//
-			// 	if (get_reply_len <= 0)
-			// 	{
-			// 		printf("Error receiving %s header!\n", have_ufs ? "UFS" : "EMMC");
-			// 		ret = 1;
-			// 		goto getoutofflashing;
-			// 	}
-			// 	else
-			// 	{
-					// // if (have_ufs)
-					// // {
-					// 	unsigned char ufs_desc_sz = 0;
-					//
-					// 	display_buffer_hex_ascii("UFS raw data", tmp_reply.ptr, get_reply_len);
-					//
-					// 	memcpy(tmp_reply.ptr, "OKAYKIOXIA,THGJFLT1E45BATPB,0100", 33);
-					//
-					// 	memcpy(&ufs_desc_sz, tmp_reply.ptr, 1);
-					// 	memcpy(&lun0_sz, tmp_reply.ptr + ufs_desc_sz + 0x1c, 4);
-					//
-					// 	lun0_sz = swap_uint32(lun0_sz);
-					// 	lun0_sz *= sector_size;
-					// 	lun0_sz /= 1024;
-					// // }
-					// // else
-					// // {
-					// // 	display_buffer_hex_ascii("EMMC raw data", tmp_reply.ptr, get_reply_len);
-					// //
-					// // 	memcpy(&lun0_sz, tmp_reply.ptr + 0xd4, 4);
-					// //
-					// // 	lun0_sz *= sector_size;
-					// // 	lun0_sz /= 1024;
-					// // }
-					//
-					// printf("%s size = %llu\n", have_ufs ? "LUN0" : "EMMC part 0", lun0_sz);
-			// 	}
-			//
-			// 	// sometimes OKAY reply is inside data buffer
-			// 	if (get_reply_len >= 4 && tmp_reply.ptr[get_reply_len - 4] == 'O' && tmp_reply.ptr[get_reply_len - 3] == 'K' && tmp_reply.ptr[get_reply_len - 2] == 'A' && tmp_reply.ptr[get_reply_len - 1] == 'Y')
-			// 	{
-			// 		get_reply_len -= 4;
-			// 		okay_replied = true;
-			// 	}
-			//
-			// 	if (!okay_replied)
-			// 	{
-			// 		if (!get_reply_ffi(dev, &tmp_reply, 0))
-			// 		{
-			// 			ret = 1;
-			// 			goto getoutofflashing;
-			// 		}
-			//
-			// 		if (memcmp(tmp_reply.ptr, "OKAY", 4) != 0)
-			// 		{
-			// 			printf(" - Error, no OKAY reply!\n");
-			// 			ret = 1;
-			// 			goto getoutofflashing;
-			// 		}
-			// 	}
-			//
-			// 	okay_replied = false;
-			// }
+			if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp)) < 1)
+			{
+				printf(" - Error writing command %s!\n", tmp);
+				ret = 1;
+				goto getoutofflashing;
+			}
+			else
+			{
+				if (!get_reply_ffi(dev))
+				{
+					ret = 1;
+					goto getoutofflashing;
+				}
 
+				if (memcmp(dev->vec.ptr, "DATA", 4) != 0)
+				{
+					printf(" - Error, no DATA reply!\n");
+					ret = 1;
+					goto getoutofflashing;
+				}
+
+				if (!get_reply_ffi(dev))
+				{
+					ret = 1;
+					goto getoutofflashing;
+				}
+
+				if (dev->vec.len <= 0)
+				{
+					printf("Error receiving %s header!\n", have_ufs ? "UFS" : "EMMC");
+					ret = 1;
+					goto getoutofflashing;
+				}
+				else
+				{
+					if (have_ufs)
+					{
+						unsigned char ufs_desc_sz = 0;
+
+						display_buffer_hex_ascii("UFS raw data", dev->vec.ptr, dev->vec.len);
+
+						memcpy(dev->vec.ptr, "OKAYKIOXIA,THGJFLT1E45BATPB,0100", 33);
+
+						memcpy(&ufs_desc_sz, dev->vec.ptr, 1);
+						memcpy(&lun0_sz, dev->vec.ptr + ufs_desc_sz + 0x1c, 4);
+
+						lun0_sz = swap_uint32(lun0_sz);
+						lun0_sz *= sector_size;
+						lun0_sz /= 1024;
+					}
+					else
+					{
+						display_buffer_hex_ascii("EMMC raw data", dev->vec.ptr, dev->vec.len);
+
+						memcpy(&lun0_sz, dev->vec.ptr + 0xd4, 4);
+
+						lun0_sz *= sector_size;
+						lun0_sz /= 1024;
+					}
+
+					printf("%s size = %llu\n", have_ufs ? "LUN0" : "EMMC part 0", lun0_sz);
+				}
+
+				// sometimes OKAY reply is inside data buffer
+				if (dev->vec.len >= 4 && dev->vec.ptr[dev->vec.len - 4] == 'O' && dev->vec.ptr[dev->vec.len - 3] == 'K' && dev->vec.ptr[dev->vec.len - 2] == 'A' && dev->vec.ptr[dev->vec.len - 1] == 'Y')
+				{
+					dev->vec.len -= 4;
+					okay_replied = true;
+				}
+
+				if (!okay_replied)
+				{
+					if (!get_reply_ffi(dev))
+					{
+						ret = 1;
+						goto getoutofflashing;
+					}
+
+					if (memcmp(dev->vec.ptr, "OKAY", 4) != 0)
+					{
+						printf(" - Error, no OKAY reply!\n");
+						ret = 1;
+						goto getoutofflashing;
+					}
+				}
+
+				okay_replied = false;
+			}
+
+
+			for(i=0; i<pd; ++i) {
+				printf("\n");
+				printf("Processing part: %s\n", partitiondelivery_xml[i]);
+			}
 
 			if (lun0_sz)
 			{
@@ -3939,6 +3751,8 @@ int main(int argc, char *argv[])
 							sin_found = 1;
 							printf("\n");
 							printf("Processing %s\n", ep->d_name);
+
+							goto skip_this;
 #ifdef _WIN32
 							snprintf(sinfil, sizeof(sinfil), "%s\\%s", working_path, ep->d_name);
 #else
@@ -4416,7 +4230,7 @@ getoutofflashing:
 	}
 	else
 	{
-		if (!get_reply_ffi(dev, &tmp_reply, 0))
+		if (!get_reply_ffi(dev))
 		{
 			printf("Error, null reply\n");
 			ret = 1;
@@ -4424,42 +4238,42 @@ getoutofflashing:
 		}
 		else
 		{
-			if (memcmp(tmp_reply.ptr, "FAIL", 4) == 0)
+			if (memcmp(dev->vec.ptr, "FAIL", 4) == 0)
 			{
-				printf("got fail reply: %s\n", tmp_reply.ptr);
+				printf("got fail reply: %s\n", dev->vec.ptr);
 				ret = 1;
 				goto slot_setup;
 			}
 			else
 			{
-				if (memcmp(tmp_reply.ptr, "DATA", 4) == 0)
+				if (memcmp(dev->vec.ptr, "DATA", 4) == 0)
 				{
 					unsigned int data_len = 0;
 
-					if (get_reply_len != 12) {
+					if (dev->vec.len != 12) {
 						printf("Errornous DATA reply!\n");
-						display_buffer_hex_ascii("replied", tmp_reply, get_reply_len);
+						display_buffer_hex_ascii("replied", tmp_reply, dev->vec.len);
 						ret = 1;
 						goto slot_setup;
 					}
 
-					sscanf(tmp_reply.ptr+4, "%08x", &data_len);
+					sscanf(dev->vec.ptr+4, "%08x", &data_len);
 
 					if (!data_len)
 					{
 						printf("got null data_len!\n");
 
-						if (!get_reply_ffi(dev, &tmp_reply, 0))
+						if (!get_reply_ffi(dev))
 						{
 							printf("Error retrieving seccond reply!\n");
 							ret = 1;
 							goto slot_setup;
 						}
 
-						if (strstr(tmp_reply.ptr, "OKAY") == NULL)
+						if (strstr(dev->vec.ptr, "OKAY") == NULL)
 						{
 							printf("Error, no OKAY reply!\n");
-							display_buffer_hex_ascii("got reply", tmp_reply, get_reply_len);
+							display_buffer_hex_ascii("got reply", tmp_reply, dev->vec.len);
 							ret = 1;
 							goto slot_setup;
 						}
@@ -4503,7 +4317,7 @@ getoutofflashing:
 								goto slot_setup;
 							}
 
-							if (strstr(tmp_reply.ptr, "OKAY") == NULL)
+							if (strstr(dev->vec.ptr, "OKAY") == NULL)
 							{
 								printf("Error, no OKAY reply!\n");
 								free(data_buf);
@@ -4523,7 +4337,7 @@ getoutofflashing:
 /*=========================================  firmwares history log    ========================================*/
 
 	snprintf(tmp, sizeof(tmp), "Read-TA:2:2475");
-	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp)) < 1)
 	{
 		printf("Error writing commad: %s\n", tmp);
 		ret = 1;
@@ -4540,26 +4354,26 @@ getoutofflashing:
 		}
 		else
 		{
-			if (memcmp(tmp_reply.ptr, "FAIL", 4) == 0)
+			if (memcmp(dev->vec.ptr, "FAIL", 4) == 0)
 			{
-				printf("got fail reply: %s\n", tmp_reply.ptr);
+				printf("got fail reply: %s\n", dev->vec.ptr);
 				ret = 1;
 				goto slot_setup;
 			}
 			else
 			{
-				if (memcmp(tmp_reply.ptr, "DATA", 4) == 0)
+				if (memcmp(dev->vec.ptr, "DATA", 4) == 0)
 				{
 					unsigned int data_len = 0;
 
-					if (get_reply_len != 12) {
+					if (dev->vec.len != 12) {
 						printf("Errornous DATA reply!\n");
-						display_buffer_hex_ascii("replied", tmp_reply.ptr, get_reply_len);
+						display_buffer_hex_ascii("replied", dev->vec.ptr, dev->vec.len);
 						ret = 1;
 						goto slot_setup;
 					}
 
-					sscanf(tmp_reply.ptr+4, "%08x", &data_len);
+					sscanf(dev->vec.ptr+4, "%08x", &data_len);
 
 					if (!data_len)
 					{
@@ -4572,10 +4386,10 @@ getoutofflashing:
 							goto slot_setup;
 						}
 
-						if (strstr(tmp_reply.ptr, "OKAY") == NULL)
+						if (strstr(dev->vec.ptr, "OKAY") == NULL)
 						{
 							printf("Error, no OKAY reply!\n");
-							display_buffer_hex_ascii("got reply", tmp_reply.ptr, get_reply_len);
+							display_buffer_hex_ascii("got reply", dev->vec.ptr, dev->vec.len);
 							ret = 1;
 							goto slot_setup;
 						}
@@ -4619,7 +4433,7 @@ getoutofflashing:
 								goto slot_setup;
 							}
 
-							if (strstr(tmp_reply.ptr, "OKAY") == NULL)
+							if (strstr(dev->vec.ptr, "OKAY") == NULL)
 							{
 								printf("Error, no OKAY reply!\n");
 								free(data_buf);
@@ -4645,30 +4459,30 @@ slot_setup:
 	{
 		snprintf(tmp, sizeof(tmp), "set_active:%s", current_slot);
 
-		if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), 1) < 1)
+		if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp)) < 1)
 		{
 				printf("Error writing command '%s'!\n", tmp);
 				ret = 1;
 				goto endflashing;
 		}
 
-		if (!get_reply_ffi(dev, &tmp_reply, 0))
+		if (!get_reply_ffi(dev))
 		{
 			printf(" - Error, no set_active:%s OKAY reply!\n", current_slot);
 			ret = 1;
 			goto endflashing;
 		}
 
-		if (strlen(tmp_reply.ptr) < 4)
+		if (strlen(dev->vec.ptr) < 4)
 		{
-			printf("      Error, 'set_active:%s' reply less than 4, got: %zu bytes!\n", current_slot, strlen(tmp_reply.ptr));
+			printf("      Error, 'set_active:%s' reply less than 4, got: %zu bytes!\n", current_slot, strlen(dev->vec.ptr));
 			ret = 1;
 			goto endflashing;
 		}
 
-		if (memcmp(tmp_reply.ptr, "OKAY", 4) != 0)
+		if (memcmp(dev->vec.ptr, "OKAY", 4) != 0)
 		{
-			printf("      Error, didn't got 'set_active:%s' OKAY reply! Got reply: %s\n", current_slot, tmp_reply);
+			printf("      Error, didn't got 'set_active:%s' OKAY reply! Got reply: %s\n", current_slot, dev->vec.ptr);
 			ret = 1;
 			goto endflashing;
 		}
@@ -4680,86 +4494,86 @@ slot_setup:
 
 	printf("\n");
 
-	if (transfer_bulk_ffi(dev, EP_OUT, "download:00000001", 17, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, "download:00000001", 17) < 1)
 	{
 		printf("Error writing command 'go out of flashmode'!\n");
 		ret = 1;
 		goto endflashing;
 	}
 
-	if (!get_reply_ffi(dev, &tmp_reply, 0))
+	if (!get_reply_ffi(dev))
 	{
 		printf(" - Error, no go_outof_flash_mode DATA reply!\n");
 		ret = 1;
 		goto endflashing;
 	}
 
-	if (strlen(tmp_reply.ptr) != 12)
+	if (strlen(dev->vec.ptr) != 12)
 	{
-		printf(" - Error, go_outof_flash_mode DATA reply size: %zu less than expected: 12!\n", strlen(tmp_reply.ptr));
+		printf(" - Error, go_outof_flash_mode DATA reply size: %zu less than expected: 12!\n", strlen(dev->vec.ptr));
 		ret = 1;
 		goto endflashing;
 	}
 
-	if (memcmp(tmp_reply.ptr+4, "00000001", 8) != 0)
+	if (memcmp(dev->vec.ptr+4, "00000001", 8) != 0)
 	{
-		printf(" - Error, go_outof_flash_mode DATA reply string: %s is not equal to expected: DATA00000001!\n", tmp_reply.ptr);
+		printf(" - Error, go_outof_flash_mode DATA reply string: %s is not equal to expected: DATA00000001!\n", dev->vec.ptr);
 		ret = 1;
 		goto endflashing;
 	}
 
-	if (transfer_bulk_ffi(dev, EP_OUT, "\x00", 1, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, "\x00", 1) < 1)
 	{
 		printf(" - Error writing 'go out of flashmode' value 0!\n");
 		ret = 1;
 		goto endflashing;
 	}
 
-	if (!get_reply_ffi(dev, &tmp_reply, 0))
+	if (!get_reply_ffi(dev))
 	{
 		printf("      Error, no 'go out of flashmode' OKAY reply!\n");
 		ret = 1;
 		goto endflashing;
 	}
 
-	if (strlen(tmp_reply.ptr) < 4)
+	if (strlen(dev->vec.ptr) < 4)
 	{
-		printf("      Error, 'go out of flashmode' reply less than 4, got: %zu bytes!\n", strlen(tmp_reply.ptr));
+		printf("      Error, 'go out of flashmode' reply less than 4, got: %zu bytes!\n", strlen(dev->vec.ptr));
 		ret = 1;
 		goto endflashing;
 	}
 
-	if (memcmp(tmp_reply.ptr, "OKAY", 4) != 0)
+	if (memcmp(dev->vec.ptr, "OKAY", 4) != 0)
 	{
-		printf("      Error, didn't got 'go out of flashmode' OKAY reply! Got reply: %s\n", tmp_reply.ptr);
+		printf("      Error, didn't got 'go out of flashmode' OKAY reply! Got reply: %s\n", dev->vec.ptr);
 		ret = 1;
 		goto endflashing;
 	}
 
-	if (transfer_bulk_ffi(dev, EP_OUT, "Write-TA:2:10100", 16, 1) < 1)
+	if (transfer_bulk_ffi(dev, EP_OUT, "Write-TA:2:10100", 16) < 1)
 	{
 		printf("Error writing TA 'go out of flashmode'!\n");
 		ret = 1;
 		goto endflashing;
 	}
 
-	if (!get_reply_ffi(dev, &tmp_reply, 0))
+	if (!get_reply_ffi(dev))
 	{
 		printf("      Error, no TA write 'go out of flashmode' OKAY reply!\n");
 		ret = 1;
 		goto endflashing;
 	}
 
-	if (strlen(tmp_reply.ptr) < 4)
+	if (strlen(dev->vec.ptr) < 4)
 	{
-		printf("      Error, TA write 'go out of flashmode' reply less than 4, got: %zu bytes!\n", strlen(tmp_reply.ptr));
+		printf("      Error, TA write 'go out of flashmode' reply less than 4, got: %zu bytes!\n", strlen(dev->vec.ptr));
 		ret = 1;
 		goto endflashing;
 	}
 
-	if (memcmp(tmp_reply.ptr, "OKAY", 4) != 0)
+	if (memcmp(dev->vec.ptr, "OKAY", 4) != 0)
 	{
-		printf("      Error, didn't got TA write 'go out of flashmode' OKAY reply! Got reply: %s\n", tmp_reply.ptr);
+		printf("      Error, didn't got TA write 'go out of flashmode' OKAY reply! Got reply: %s\n", dev->vec.ptr);
 		ret = 1;
 		goto endflashing;
 	}
@@ -4773,7 +4587,7 @@ endflashing:
 	if (something_flashed)
 	{
 		snprintf(tmp, sizeof(tmp), "Sync");
-		if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), 1) < 1)
+		if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp)) < 1)
 		{
 			printf(" - Error writing command %s!\n", tmp);
 			ret = 1;
@@ -4781,7 +4595,7 @@ endflashing:
 		}
 		printf("Sent command: Sync\n");
 #if 1
-		if (!get_reply_ffi(dev, &tmp_reply, 0))
+		if (!get_reply_ffi(dev))
 		{
 			printf(" error, no sync response!\n");
 			ret = 1;
@@ -4823,7 +4637,7 @@ endflashing:
 		}
 
 retry:
-		if (transfer_bulk_ffi(dev, EP_OUT, reboot_string, strlen(reboot_string), 1) < 1)
+		if (transfer_bulk_ffi(dev, EP_OUT, reboot_string, strlen(reboot_string)) < 1)
 		{
 			printf(" - Error writing command %s!\n", reboot_string);
 			ret = 1;
@@ -4831,7 +4645,7 @@ retry:
 		}
 		printf("Sent command: %s.\n", reboot_string);
 
-		if (!get_reply_ffi(dev, &tmp_reply, 0))
+		if (!get_reply_ffi(dev))
 		{
 			printf("Error, no %s response!\n", reboot_string);
 			ret = 1;
@@ -4849,7 +4663,7 @@ retry:
 		}
 		else
 		{
-			//display_buffer_hex_ascii("reboot mode response", tmp_reply, get_reply_len);
+			//display_buffer_hex_ascii("reboot mode response", tmp_reply, dev->vec.len);
 			printf("\nDone.\n");
 		}
 	}
@@ -4870,7 +4684,7 @@ release:
 	}
 #endif
 	printf("Closing device.\n");
-	CloseHandle(dev);
+	// TODO: CloseHandle(dev);
 	SetupDiDestroyDeviceInfoList(hDevInfo);
 
 #ifdef __APPLE__
@@ -4879,7 +4693,7 @@ release:
 
 pauza:
 
-// TODO: memset(tmp_reply.ptr, 0, BUFF_MAX);
+// TODO: memset(dev->vec.ptr, 0, BUFF_MAX);
 
 if (flash_session_created)
 	rmdir("flash_session");
