@@ -1529,7 +1529,7 @@ static int verify_checksum(const char *p)
 	return (u == parseoct(p + 148, 8));
 }
 
-static bool keep_userdata = false;
+static bool keep_userdata = true;
 static bool file_found_in_updatexml = false;
 static void check_in_updatexml(char *updatexml_file, char *searchfor)
 {
@@ -3040,12 +3040,12 @@ int main(int argc, char *argv[])
 	}
 	else
 	{
-		printf("\nDo you want to keep userdata? Type 'y' and press ENTER to confirm, or type 'n' to erase userdata.\n");
-		if (scanf(" %c", &ch)) { }
-		if (ch == 'y' || ch == 'Y')
-		{
-			keep_userdata = true;
-		}
+		// printf("\nDo you want to keep userdata? Type 'y' and press ENTER to confirm, or type 'n' to erase userdata.\n");
+		// if (scanf(" %c", &ch)) { }
+		// if (ch == 'y' || ch == 'Y')
+		// {
+		// 	keep_userdata = true;
+		// }
 	}
 
 /*============================================  reboot mode ==========================================*/
