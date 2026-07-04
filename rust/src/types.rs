@@ -70,7 +70,7 @@ impl<T> PartialEq<T> for ByteVec
         T: AsRef<[u8]>
 {
     fn eq(&self, other: &T) -> bool {
-        self == other
+        self.data == other.as_ref()
     }
 }
 
