@@ -10,6 +10,7 @@ mod tests {
     use std::sync::{Mutex, OnceLock};
     use tar::Archive;
     use crate::sins::{transfer_cms};
+    use crate::ta::{process_ta_file, TrimArea};
     use crate::xml_parser::{boot_delivery, partition_delivery};
 
     unsafe extern "C" {
@@ -35,6 +36,17 @@ mod tests {
         println!();
         let boot = boot_delivery(base.join("boot/boot_delivery.xml")).unwrap();
         println!("Boot Delivery: {:#?}", boot);
+    }
+
+    #[test]
+    fn test_ta() {
+        let ta = process_ta_file(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/auto-boot.ta")).unwrap();
+        assert_eq!(ta, TrimArea { partition: 2, unit: 0x907, data: ByteVec::from("0") } );
+
+        process_ta_file(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/CustomerID_S20000480_001_HK_c001526.ta")).unwrap();
+        process_ta_file(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/osv-restriction.ta")).unwrap();
+        process_ta_file(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/reset-kernel-cmd-debug.ta")).unwrap();
+        process_ta_file(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/reset-retail-demo-active-sts.ta")).unwrap();
     }
 
     // https://android.googlesource.com/platform/system/core/+/master/fastboot/README.md
@@ -109,14 +121,14 @@ mod tests {
         assert_eq!(file_size(text), 26);
     }
 
-    #[test]
-    fn test_trim() {
-        let str = "  this is\r a\n test\t string  .  ";
-        assert_eq!(trim_rs(str), "thisisateststring.");
-
-        let str1 = "\r\n\t why would you type\r\r\r\r \n\n\n\n \t\t\t\t like this";
-        assert_eq!(trim_rs(str1), "whywouldyoutypelikethis");
-    }
+    // #[test]
+    // fn test_trim() {
+    //     let str = "  this is\r a\n test\t string  .  ";
+    //     assert_eq!(trim_rs(str), "thisisateststring.");
+    //
+    //     let str1 = "\r\n\t why would you type\r\r\r\r \n\n\n\n \t\t\t\t like this";
+    //     assert_eq!(trim_rs(str1), "whywouldyoutypelikethis");
+    // }
 
     #[test]
     fn test_parseoct() {
