@@ -10,7 +10,7 @@ mod tests {
     use std::sync::{Mutex, OnceLock};
     use tar::Archive;
     use crate::sins::{transfer_cms};
-    use crate::ta::{process_ta_file, TrimArea};
+    use crate::ta::{process_trim_area, TrimArea};
     use crate::xml_parser::{boot_delivery, partition_delivery};
 
     unsafe extern "C" {
@@ -40,19 +40,19 @@ mod tests {
 
     #[test]
     fn test_ta() {
-        let ta = process_ta_file(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/auto-boot.ta")).unwrap();
+        let ta = process_trim_area(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/auto-boot.ta")).unwrap();
         assert_eq!(ta, TrimArea { partition: 2, unit: 0x907, data: ByteVec::from([0x0]) } );
 
-        let ta = process_ta_file(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/CustomerID_S20000480_001_HK_c001526.ta")).unwrap();
+        let ta = process_trim_area(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/CustomerID_S20000480_001_HK_c001526.ta")).unwrap();
         assert_eq!(ta, TrimArea{ partition: 2, unit: 0x87B, data: ByteVec::from([0x63, 0x30, 0x30, 0x31, 0x35, 0x32, 0x36]) });
 
-        let ta = process_ta_file(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/osv-restriction.ta")).unwrap();
+        let ta = process_trim_area(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/osv-restriction.ta")).unwrap();
         assert_eq!(ta, TrimArea{ partition: 2, unit: 0x91A, data: ByteVec::from([0x0]) });
 
-        let ta = process_ta_file(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/reset-kernel-cmd-debug.ta")).unwrap();
+        let ta = process_trim_area(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/reset-kernel-cmd-debug.ta")).unwrap();
         assert_eq!(ta, TrimArea{ partition: 2, unit: 0x9A9, data: ByteVec::from([0x0]) });
 
-        let ta = process_ta_file(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/reset-retail-demo-active-sts.ta")).unwrap();
+        let ta = process_trim_area(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/reset-retail-demo-active-sts.ta")).unwrap();
         assert_eq!(ta, TrimArea{ partition: 2, unit: 0xA1E, data: ByteVec::new() });
     }
 

@@ -23,6 +23,10 @@ impl ByteVec {
     pub fn new() -> Self {
         Self { data: Vec::new() }
     }
+    
+    pub fn extend_vec(&mut self, vec: Self) {
+        self.data.extend(vec.as_ref());
+    }
 
     pub fn from_len(len: usize) -> Self {
         ByteVec::from(format!("{:08x}", len))
