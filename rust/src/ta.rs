@@ -214,7 +214,7 @@ pub fn process_ta_file(ta_file: PathBuf/*, dev: FastbootDevice*/) -> anyhow::Res
                                 " Unit size: %04X, Unit data:%s\n",
                                  unit, unit_sz, unit_sz ? "" : " NULL");*/
                             // TODO:
-                            unit_data = to_ascii_number(unit_data).into();
+                            unit_data = to_ascii_number(unit_data)?;
 
                             command = format!("download:{:08x}", unit_size).into();
                             println!("      {}", command);
@@ -333,6 +333,12 @@ pub fn check_valid_unit(line: &str) -> bool {
     line[0..8].chars().map(|c| c.is_ascii_alphanumeric()).all(|b| b)
 }
 
-pub fn to_ascii_number(hex: ByteVec) -> String {
-    hex.as_hexadecimal().unwrap_or(0).to_string()
+pub fn to_ascii_number(hex: ByteVec) -> anyhow::Result<ByteVec> {
+    hex.chunks(2)
+        .map(|chunk| {
+            let str = str::from_utf8(chunk).context("Invalid UTF8!")?;
+            let byte = u8::from_str_radix(str, 16).context("Invalid hexadecimal string!") ?;
+            Ok(byte)
+        })
+        .collect::<anyhow::Result<ByteVec>>()
 }

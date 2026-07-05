@@ -41,12 +41,19 @@ mod tests {
     #[test]
     fn test_ta() {
         let ta = process_ta_file(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/auto-boot.ta")).unwrap();
-        assert_eq!(ta, TrimArea { partition: 2, unit: 0x907, data: ByteVec::from("0") } );
+        assert_eq!(ta, TrimArea { partition: 2, unit: 0x907, data: ByteVec::from([0x0]) } );
 
-        process_ta_file(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/CustomerID_S20000480_001_HK_c001526.ta")).unwrap();
-        process_ta_file(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/osv-restriction.ta")).unwrap();
-        process_ta_file(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/reset-kernel-cmd-debug.ta")).unwrap();
-        process_ta_file(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/reset-retail-demo-active-sts.ta")).unwrap();
+        let ta = process_ta_file(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/CustomerID_S20000480_001_HK_c001526.ta")).unwrap();
+        assert_eq!(ta, TrimArea{ partition: 2, unit: 0x87B, data: ByteVec::from([0x63, 0x30, 0x30, 0x31, 0x35, 0x32, 0x36]) });
+
+        let ta = process_ta_file(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/osv-restriction.ta")).unwrap();
+        assert_eq!(ta, TrimArea{ partition: 2, unit: 0x91A, data: ByteVec::from([0x0]) });
+
+        let ta = process_ta_file(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/reset-kernel-cmd-debug.ta")).unwrap();
+        assert_eq!(ta, TrimArea{ partition: 2, unit: 0x9A9, data: ByteVec::from([0x0]) });
+
+        let ta = process_ta_file(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/reset-retail-demo-active-sts.ta")).unwrap();
+        assert_eq!(ta, TrimArea{ partition: 2, unit: 0xA1E, data: ByteVec::new() });
     }
 
     // https://android.googlesource.com/platform/system/core/+/master/fastboot/README.md
