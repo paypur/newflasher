@@ -67,6 +67,6 @@ pub extern "C" fn is_end_of_archive(ptr: *const c_char) -> bool {
     true
 }
 
-pub fn trim_rs(str: &str) -> String {
-    str.chars().filter(|&c| c != ' ' && c != '\t' && c != '\n' && c != '\r').collect()
+pub fn trim_rs(string: &mut String) {
+    string.retain(|c| c != ' ' && c != '\t' && c != '\n' && c != '\r');
 }

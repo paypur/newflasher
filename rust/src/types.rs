@@ -20,6 +20,10 @@ pub struct ByteVec {
 }
 
 impl ByteVec {
+    pub fn new() -> Self {
+        Self { data: Vec::new() }
+    }
+
     pub fn from_len(len: usize) -> Self {
         ByteVec::from(format!("{:08x}", len))
     }
@@ -43,9 +47,27 @@ impl From<Vec<u8>> for ByteVec {
     }
 }
 
+impl<const N: usize> From<[u8; N]> for ByteVec {
+    fn from(value: [u8; N]) -> Self {
+        Vec::from(value).into()
+    }
+}
+
+impl From<&[u8]> for ByteVec {
+    fn from(value: &[u8]) -> Self {
+        Vec::from(value).into()
+    }
+}
+
+impl From<&str> for ByteVec {
+    fn from(value: &str) -> Self {
+        Vec::from(value).into()
+    }
+}
+
 impl From<String> for ByteVec {
     fn from(value: String) -> Self {
-        ByteVec::from(value.into_bytes())
+        value.into_bytes().into()
     }
 }
 
@@ -54,6 +76,12 @@ impl From<CVec> for ByteVec {
         unsafe {
             Vec::from_raw_parts(value.ptr, value.len, value.cap).into()
         }
+    }
+}
+
+impl FromIterator<u8> for ByteVec {
+    fn from_iter<T: IntoIterator<Item = u8>>(iter: T) -> Self {
+        iter.into_iter().collect::<Vec<u8>>().into()
     }
 }
 
