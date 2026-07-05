@@ -3,6 +3,7 @@ mod types;
 mod utils;
 mod sins;
 mod xml_parser;
+mod ta;
 
 use nusb::{Device, Interface, MaybeFuture};
 use std::ffi::{c_char, c_ushort, CStr};

@@ -254,7 +254,7 @@ pub fn check_in_updatexml_rs(xml_file: &Path, searchfor: &str) -> bool {
         match line {
             Ok(mut str) => {
                 if !str.is_empty() {
-                    str = trim_rs(&str);
+                    trim_rs(&mut str);
                     if str.contains("<NOERASE>") && str.contains(searchfor)
                     {
                         println!("{}", str);
