@@ -20,7 +20,7 @@ enum TAParseState {
     Complete
 }
 
-pub fn process_trim_area(ta_file: PathBuf) -> anyhow::Result<TrimArea> {
+pub fn process_trim_area(ta_file: PathBuf) -> anyhow::Result<Option<TrimArea>> {
     let mut partition: u8 = 0;
     let mut unit: usize = 0;
     let mut unit_data = ByteVec::new();
@@ -43,6 +43,10 @@ pub fn process_trim_area(ta_file: PathBuf) -> anyhow::Result<TrimArea> {
 
         match state {
             TAParseState::Partition => {
+                if trim.len() != 2 {
+                    return Err(anyhow!("Invalid partition!"));
+                }
+
                 let bytes = trim.as_bytes();
                 if bytes[0].is_ascii_digit() && bytes[1].is_ascii_digit() {
                     partition = u8::from_str(trim).unwrap_or(0);
@@ -51,45 +55,53 @@ pub fn process_trim_area(ta_file: PathBuf) -> anyhow::Result<TrimArea> {
                 }
             },
             TAParseState::UnitData => {
-                if check_valid_unit(&trim) {
-                    let unit_hex: ByteVec = trim[0..8].as_bytes().into();
-                    unit = unit_hex.as_hexadecimal()? as usize;
-                    println!(" - Unit: {unit_hex} ({unit})");
-
-                    let (size, offset) = {
-                        /*
-                         * in case of 32 bit unit size!
-                         * unit(8) + space(1) + unit size(8) + space(1)
-                         */
-                        let (size_str, offset) = if trim.len() >= 18 && trim.chars().nth(8).unwrap() == ' ' && trim.chars().nth(17).unwrap() == ' ' {
-                            (&trim[9..17], 18)
-                        } else {
-                            (&trim[9..13], 14)
-                        };
-                        let s = usize::from_str_radix(size_str, 16).with_context(|| format!("Error parsing unit size: {size_str}"))?;
-                        (s, offset)
-                    };
-
-                    if size == 0 {
-                        println!(" - Found specific unit which doesn't contain data.");
-                        state = TAParseState::Complete;
-                        continue;
-                    }
-
-                    println!(" - Unit size: 0x{size:x}");
-
-                    unit_data = parse_hex_string(&line[offset..]).with_context(|| format!("Error parsing unit data: {}", &line[offset..]))?;
-
-                    if size < unit_data.len() {
-                        return Err(anyhow!("Error: corrupted unit!"));
-                    };
-
-                    state = if size == unit_data.len() {
-                        TAParseState::Complete
-                    } else {
-                        TAParseState::Extra
-                    };
+                if trim.len() < 8 {
+                    return Err(anyhow!("Invalid unit!"));
                 }
+
+                let unit_hex: ByteVec = trim[0..8].as_bytes().into();
+                unit = unit_hex.as_hexadecimal()? as usize;
+
+                if is_blacklisted(unit) {
+                    println!(" - Skipping unit 0x{unit:x}");
+                    return Ok(None);
+                }
+
+                println!(" - Unit: {unit_hex} ({unit})");
+
+                let (size, offset) = {
+                    /*
+                     * in case of 32 bit unit size!
+                     * unit(8) + space(1) + unit size(8) + space(1)
+                     */
+                    let (size_str, offset) = if trim.len() >= 18 && trim.chars().nth(8).unwrap() == ' ' && trim.chars().nth(17).unwrap() == ' ' {
+                        (&trim[9..17], 18)
+                    } else {
+                        (&trim[9..13], 14)
+                    };
+                    let s = usize::from_str_radix(size_str, 16).with_context(|| format!("Error parsing unit size: {size_str}"))?;
+                    (s, offset)
+                };
+
+                if size == 0 {
+                    println!(" - Found specific unit which doesn't contain data.");
+                    state = TAParseState::Complete;
+                    continue;
+                }
+
+                println!(" - Unit size: 0x{size:x}");
+
+                unit_data = parse_hex_string(&line[offset..]).with_context(|| format!("Error parsing unit data: {}", &line[offset..]))?;
+
+                if size < unit_data.len() {
+                    return Err(anyhow!("Error: corrupted unit!"));
+                };
+
+                state = if size == unit_data.len() {
+                    TAParseState::Complete
+                } else {
+                    TAParseState::Extra
+                };
             },
             TAParseState::Extra => {
                 unit_data.extend_vec(parse_hex_string(trim).with_context(|| format!("Error parsing unit data: {trim}"))?);
@@ -102,29 +114,10 @@ pub fn process_trim_area(ta_file: PathBuf) -> anyhow::Result<TrimArea> {
 
     ensure!(state == TAParseState::Complete, "Unexpected end of file!");
 
-    Ok(TrimArea{ partition, unit, data: unit_data })
+    Ok(Some(TrimArea{partition, unit, data: unit_data}))
 }
 
-            /*
-                unit 0x7d3 (2003) hardware config
-                unit 0x7da (2010) simlock
-                unit 0x851 (2129) simlock signature
-                unit 0x1324 (4900) device id
-                unit 0x1046F (66671) google lock state ( allow bootloader unlock in dev settings )
-                unit 0x9A9 (2473) value 1 for enable serial console or value 0 (default) to disable (https://forum.xda-developers.com/showpost.php?p=80212371&postcount=1125)
-                unit 0x10471 (66673) protocol switch? Or keystore? What is this? Depend on existance of unit 0x36A (https://forum.xda-developers.com/showpost.php?p=80176195&postcount=1093)
-            */
 
-            // if /*memcmp(unit, "000008B2", 8) == 0 || unlock key */
-            // unit == b"000007D3" || /* hardware config */
-            //     unit == b"000007DA" || /* simlock */
-            //         unit == b"00000851" || /* simlock signature */
-            //         unit == b"000008A2" || /* device name */
-            //         unit == b"00001324" || /* device id */
-            //         unit == b"0001046B" {
-            // /* drm key */
-            // println!(" - Skipping unit {:x}", unit_dec);
-            // continue;
 
 /*        /*LOG("\n<<-------------------- Retrieval finished! Found unit: %s,"
             " Unit size: %04X, Unit data:%s\n",
@@ -230,12 +223,23 @@ pub fn process_trim_area(ta_file: PathBuf) -> anyhow::Result<TrimArea> {
 
                                                 println!("      OKAY.\n");*/
 
-pub fn check_valid_unit(line: &str) -> bool {
-    if line.len() < 8 {
-        return false;
-    }
-
-    line[0..8].chars().map(|c| c.is_ascii_alphanumeric()).all(|b| b)
+pub fn is_blacklisted(unit: usize) -> bool {
+    /*
+        unit 0x7d3 (2003) hardware config
+        unit 0x7da (2010) simlock
+        unit 0x851 (2129) simlock signature
+        unit 0x1324 (4900) device id
+        unit 0x1046F (66671) google lock state ( allow bootloader unlock in dev settings )
+        unit 0x9A9 (2473) value 1 for enable serial console or value 0 (default) to disable (https://forum.xda-developers.com/showpost.php?p=80212371&postcount=1125)
+        unit 0x10471 (66673) protocol switch? Or keystore? What is this? Depend on existance of unit 0x36A (https://forum.xda-developers.com/showpost.php?p=80176195&postcount=1093)
+    */
+    // if /*memcmp(unit, "000008B2", 8) == 0 || unlock key */
+    matches!(unit, 0x7D3 /* hardware config */ |
+                   0x7DA /* simlock */ |
+                   0x851 /* simlock signature */ |
+                   0x8A2 /* device name */ |
+                   0x1324 /* device id */ |
+                   0x1046B /* drm key */)
 }
 
 pub fn parse_hex_string(hex: &str) -> anyhow::Result<ByteVec> {
