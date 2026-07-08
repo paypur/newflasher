@@ -20,7 +20,7 @@ enum TAParseState {
     Complete
 }
 
-pub fn process_trim_area(ta_file: PathBuf) -> anyhow::Result<Option<TrimArea>> {
+pub fn process_trim_area(ta_file: &PathBuf) -> anyhow::Result<Option<TrimArea>> {
     let mut partition: u8 = 0;
     let mut unit: usize = 0;
     let mut unit_data = ByteVec::new();
@@ -67,7 +67,7 @@ pub fn process_trim_area(ta_file: PathBuf) -> anyhow::Result<Option<TrimArea>> {
                     return Ok(None);
                 }
 
-                println!(" - Unit: {unit_hex} ({unit})");
+                println!(" - Unit: 0x{unit_hex} ({unit})");
 
                 let (size, offset) = {
                     /*

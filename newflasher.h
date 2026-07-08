@@ -47,4 +47,12 @@ bool fastboot_cmd_ffi(HANDLE handle, const char *cmd, char *reply_buf, size_t re
 bool fastboot_download_ffi(HANDLE handle, const char *data, size_t len);
 uint32_t getvar_u32_ffi(HANDLE handle, const char *cmd, uint32_t fallback);
 
+
+struct TrimArea {
+	uint8_t partition;
+	size_t unit;
+	uint8_t *data;
+    size_t size;
+};
+
 #endif //NEWFLASHER_H
