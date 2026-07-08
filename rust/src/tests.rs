@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+    use std::ffi::{c_uint, CString};
     use crate::utils::{file_exist, file_size};
     use crate::utils::{parseoct, trim_rs};
     use crate::*;
@@ -7,13 +8,24 @@ mod tests {
     use std::fs::File;
     use std::io::Read;
     use std::path::PathBuf;
+    use std::slice::from_raw_parts;
     use std::sync::{Mutex, OnceLock};
     use tar::Archive;
     use crate::sins::{transfer_cms};
     use crate::ta::{process_trim_area, TrimArea};
     use crate::xml_parser::{boot_delivery, partition_delivery};
 
+    #[repr(C)]
+    #[derive(PartialEq, Debug)]
+    struct TA {
+        partition: u8,
+        unit: usize,
+        data: *const u8,
+        size: usize
+    }
+
     unsafe extern "C" {
+        fn process_ta_file_c(file: *const c_char) -> TA;
     }
 
     const VID: u16 = 0x0FCE;
@@ -39,21 +51,12 @@ mod tests {
     }
 
     #[test]
-    fn test_ta() {
-        let ta = process_trim_area(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/auto-boot.ta")).unwrap().unwrap();
-        assert_eq!(ta, TrimArea { partition: 2, unit: 0x907, data: ByteVec::from([0x0]) } );
-
-        let ta = process_trim_area(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/CustomerID_S20000480_001_HK_c001526.ta")).unwrap().unwrap();
-        assert_eq!(ta, TrimArea{ partition: 2, unit: 0x87B, data: ByteVec::from([0x63, 0x30, 0x30, 0x31, 0x35, 0x32, 0x36]) });
-
-        let ta = process_trim_area(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/osv-restriction.ta")).unwrap().unwrap();
-        assert_eq!(ta, TrimArea{ partition: 2, unit: 0x91A, data: ByteVec::from([0x0]) });
-
-        let ta = process_trim_area(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/reset-kernel-cmd-debug.ta")).unwrap().unwrap();
-        assert_eq!(ta, TrimArea{ partition: 2, unit: 0x9A9, data: ByteVec::from([0x0]) });
-
-        let ta = process_trim_area(PathBuf::from("../../XQ-EC72_Customized_HK_69.2.A.4.90/reset-retail-demo-active-sts.ta")).unwrap().unwrap();
-        assert_eq!(ta, TrimArea{ partition: 2, unit: 0xA1E, data: ByteVec::new() });
+    fn test_ta_files() {
+        test_both_ta("../../XQ-EC72_Customized_HK_69.2.A.4.90/auto-boot.ta", TrimArea { partition: 2, unit: 0x907, data: ByteVec::from([0x0]) });
+        test_both_ta("../../XQ-EC72_Customized_HK_69.2.A.4.90/CustomerID_S20000480_001_HK_c001526.ta", TrimArea { partition: 2, unit: 0x87B, data: ByteVec::from([0x63, 0x30, 0x30, 0x31, 0x35, 0x32, 0x36]) });
+        test_both_ta("../../XQ-EC72_Customized_HK_69.2.A.4.90/osv-restriction.ta", TrimArea { partition: 2, unit: 0x91A, data: ByteVec::from([0x0]) });
+        test_both_ta("../../XQ-EC72_Customized_HK_69.2.A.4.90/reset-kernel-cmd-debug.ta", TrimArea { partition: 2, unit: 0x9A9, data: ByteVec::from([0x0]) });
+        test_both_ta("../../XQ-EC72_Customized_HK_69.2.A.4.90/reset-retail-demo-active-sts.ta", TrimArea { partition: 2, unit: 0xA1E, data: ByteVec::new() });
     }
 
     // https://android.googlesource.com/platform/system/core/+/master/fastboot/README.md
@@ -144,6 +147,21 @@ mod tests {
         assert_eq!(parseoct(c"777".as_ptr(), 3), 0b111111111);
 
         assert_eq!(parseoct(c"a777z".as_ptr(), 5), 0b111111111);
+    }
+
+    fn test_both_ta(file: &str, expected: TrimArea) {
+        let path = PathBuf::from(file);
+        let string = CString::new(path.to_str().unwrap()).unwrap();
+        let cstr = string.as_ptr();
+
+        let ta_rs = process_trim_area(&path).unwrap().unwrap();
+        let ta_c = unsafe { process_ta_file_c(cstr) };
+
+        assert_eq!(ta_rs, expected);
+        assert_eq!(ta_c.partition, expected.partition);
+        assert_eq!(ta_c.unit, expected.unit);
+        assert_eq!(ta_c.size, expected.data.len());
+        assert_eq!(unsafe { from_raw_parts(ta_c.data, ta_c.size) }, expected.data.as_slice());
     }
 
     fn reply_str<'a>(usb: &'a mut FastbootDevice, cmd: &str) -> &'a str {

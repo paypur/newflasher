@@ -418,9 +418,12 @@ static char *uint16_to_vidpidstring(unsigned short VID, unsigned short PID)
 #endif
 
 static void to_ascii(char *dest, const char *text) {
-	for(char ch; sscanf((const char *)text, "%02X", &ch)==1; text+=2)
-		*dest++ = ch;
-	*dest = 0;
+    unsigned int val;
+    while (text[0] != '\0' && text[1] != '\0' && sscanf(text, "%02X", &val) == 1) {
+        *dest++ = (char)val;
+        text += 2;
+    }
+    *dest = '\0';
 }
 
 static void to_uppercase(char *ptr) {
@@ -2023,9 +2026,11 @@ static int parse_xml(char *xml_file) {
 	return ret;
 }
 
-static int proced_ta_file(char *ta_file, HANDLE dev)
+struct TrimArea process_ta_file_c(char *ta_file)
 {
-	FILE *fp = NULL;
+	struct TrimArea ta = {0};
+
+ 	FILE *fp = NULL;
 	char *line = NULL;
 	size_t len = 0;
 	ssize_t read;
@@ -2033,24 +2038,22 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 	char unit[9];
 	char unit_sz_tmp[9];
 	char command[64];
-	unsigned int unit_sz;
-	char *unit_data=NULL;
-	unsigned int i, j, unit_dec=0, the_rest=0, partition=0, finished=0, ret=1;
+	unsigned int i, j, the_rest=0, finished=0, ret=1;
 
 	/* some devices have some units which exceeds sizeof uint16_t */
 	bool is_32bit = false;
 
 	printf("Processing %s\n", ta_file);
 
-	if ((unit_data = (char *)malloc(MAX_UNIT_LINE_LEN)) == NULL)
+	if ((ta.data = (char *)malloc(MAX_UNIT_LINE_LEN)) == NULL)
 	{
 		printf(" - Error allocating unit_data!\n");
-		return 0;
+		return ta;
 	}
 
 	if ((fp = fopen64(ta_file, "rb")) == NULL) {
 		printf(" - Unable to open %s!\n", ta_file);
-		return 0;
+		return ta;
 	}
 
 	while((read = g_getline(&line, &len, fp)) != -1)
@@ -2066,8 +2069,8 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 			case 3:
 				if (line[0] >= 0x30 && line[0] <= 0x39 && line[1] >= 0x30 && line[1] <= 0x39)
 				{
-					partition = atoi(line);
-					printf(" - Partition: %u\n", partition);
+					ta.partition = atoi(line);
+					printf(" - Partition: %u\n", ta.partition);
 				}
 				break;
 
@@ -2086,8 +2089,8 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 						memcpy(unit, line, 8);
 						unit[8] = '\0';
 						to_uppercase(unit);
-						sscanf(unit, "%x", &unit_dec);
-						printf(" - Unit: %X (%u)\n", unit_dec, unit_dec);
+						sscanf(unit, "%x", &ta.unit);
+						printf(" - Unit: %X (%u)\n", ta.unit, ta.unit);
 
 						/*
 						 * in case of 32 bit unit size!
@@ -2114,7 +2117,7 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 									printf(" - Found specific unit which don't contain data.\n");
 									the_rest = 0;
 									finished = 1;
-									unit_sz = 0;
+									ta.size = 0;
 								}
 								else
 								{
@@ -2127,15 +2130,15 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 							{
 								memcpy(unit_sz_tmp, line+8, 8);
 								unit_sz_tmp[8] = '\0';
-								sscanf(unit_sz_tmp, "%x", &unit_sz);
-								printf(" - Unit size: 0x%x\n", unit_sz);
-								memset(unit_data, '\0', MAX_UNIT_LINE_LEN);
+								sscanf(unit_sz_tmp, "%x", &ta.size);
+								printf(" - Unit size: 0x%x\n", ta.size);
+								memset(ta.data, '\0', MAX_UNIT_LINE_LEN);
 								i = strlen(line);
 								if (i)
-									memcpy(unit_data, line+16, i);
-								unit_data[i] = '\0';
+									memcpy(ta.data, line+16, i);
+								ta.data[i] = '\0';
 
-								if ((unsigned int)strlen(line)-16 < unit_sz*2)
+								if ((unsigned int)strlen(line)-16 < ta.size*2)
 								{
 									/*LOG("Data probably continues in a new line (%u not match %u)!\n",
 										(unsigned int)strlen(line)-16, unit_sz*2);*/
@@ -2146,7 +2149,7 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 									the_rest = 0;
 								}
 
-								if ((unsigned int)strlen(unit_data) == unit_sz*2)
+								if ((unsigned int)strlen(ta.data) == ta.size*2)
 									finished = 1;
 							}
 						}
@@ -2160,7 +2163,7 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 									printf(" - Found specific unit which don't contain data.\n");
 									the_rest = 0;
 									finished = 1;
-									unit_sz = 0;
+									ta.size = 0;
 								}
 								else
 								{
@@ -2173,15 +2176,15 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 							{
 								memcpy(unit_sz_tmp, line+8, 4);
 								unit_sz_tmp[4] = '\0';
-								sscanf(unit_sz_tmp, "%x", &unit_sz);
-								printf(" - Unit size: 0x%x\n", unit_sz);
-								memset(unit_data, '\0', MAX_UNIT_LINE_LEN);
+								sscanf(unit_sz_tmp, "%x", &ta.size);
+								printf(" - Unit size: 0x%x\n", ta.size);
+								memset(ta.data, '\0', MAX_UNIT_LINE_LEN);
 								i = strlen(line);
 								if (i)
-									memcpy(unit_data, line+12, i);
-								unit_data[i] = '\0';
+									memcpy(ta.data, line+12, i);
+								ta.data[i] = '\0';
 
-								if ((unsigned int)strlen(line)-12 < unit_sz*2)
+								if ((unsigned int)strlen(line)-12 < ta.size*2)
 								{
 									/*LOG("Data probably continues in a new line (%u not match %u)!\n",
 										(unsigned int)strlen(line)-12, unit_sz*2);*/
@@ -2192,7 +2195,7 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 									the_rest = 0;
 								}
 
-								if ((unsigned int)strlen(unit_data) == unit_sz*2)
+								if ((unsigned int)strlen(ta.data) == ta.size*2)
 									finished = 1;
 							}
 
@@ -2206,13 +2209,13 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 							trim(line);
 							/*LOG("Line lenght after trim: %lu\n", strlen(line));
 							LOG("Found the rest ot the data!\n");*/
-							j = strlen(unit_data);
+							j = strlen(ta.data);
 							i = strlen(line);
 							if (i)
-								memcpy(unit_data+j, line, i);
-							unit_data[j+i] = '\0';
+								memcpy(ta.data+j, line, i);
+							ta.data[j+i] = '\0';
 
-							if ((unsigned int)strlen(unit_data) == unit_sz*2)
+							if ((unsigned int)strlen(ta.data) == ta.size*2)
 							{
 								the_rest = 0;
 								finished = 1;
@@ -2241,8 +2244,71 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 						    memcmp(unit, "000008A2", 8) == 0 || /* device name */
 						    memcmp(unit, "00001324", 8) == 0 || /* device id */
 						    memcmp(unit, "0001046B", 8) == 0) { /* drm key */
-							printf(" - Skipping unit %X\n", unit_dec);
+							printf(" - Skipping unit %X\n", ta.unit);
 							continue;
+						}
+
+						if ((unit_total_temp = (char *)malloc(ta.size+8)) == NULL) {
+							printf(" - Error allocating unit_temp!\n");
+							ret = 0;
+							goto finish_proced_ta;
+						}
+
+						finished = 0;
+						to_ascii(ta.data, ta.data);
+					}
+				}
+				break;
+		}
+	}
+
+finish_proced_ta:
+
+	if (fp)
+		fclose(fp);
+
+	if (line)
+		free(line);
+
+	return ta;
+}
+
+static int proced_ta_file(char *ta_file, HANDLE dev)
+{
+	char unit[9];
+	char command[64];
+	char *unit_data=NULL;
+	unsigned int unit_dec=0, partition=0, ret=1;
+
+	struct TrimArea ta = process_ta_file_c(ta_file);
+
+	unit_dec = ta.unit;
+	partition = ta.partition;
+	unit_data = ta.data;
+	unsigned int unit_sz = ta.size;
+
+
+	char *unit_total_temp = NULL;
+
+						/*
+							unit 0x7d3 (2003) hardware config
+							unit 0x7da (2010) simlock
+							unit 0x851 (2129) simlock signature
+							unit 0x1324 (4900) device id
+							unit 0x1046F (66671) google lock state ( allow bootloader unlock in dev settings )
+							unit 0x9A9 (2473) value 1 for enable serial console or value 0 (default) to disable (https://forum.xda-developers.com/showpost.php?p=80212371&postcount=1125)
+							unit 0x10471 (66673) protocol switch? Or keystore? What is this? Depend on existance of unit 0x36A (https://forum.xda-developers.com/showpost.php?p=80176195&postcount=1093)
+						*/
+
+						if (/*memcmp(unit, "000008B2", 8) == 0 || unlock key */
+						    memcmp(unit, "000007D3", 8) == 0 || /* hardware config */
+						    memcmp(unit, "000007DA", 8) == 0 || /* simlock */
+						    memcmp(unit, "00000851", 8) == 0 || /* simlock signature */
+						    memcmp(unit, "000008A2", 8) == 0 || /* device name */
+						    memcmp(unit, "00001324", 8) == 0 || /* device id */
+						    memcmp(unit, "0001046B", 8) == 0) { /* drm key */
+							printf(" - Skipping unit %X\n", unit_dec);
+							goto finish_proced_ta;
 						}
 
 						if ((unit_total_temp = (char *)malloc(unit_sz+8)) == NULL) {
@@ -2251,7 +2317,6 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 							goto finish_proced_ta;
 						}
 
-						finished = 0;
 						/*LOG("\n<<-------------------- Retrieval finished! Found unit: %s,"
 							" Unit size: %04X, Unit data:%s\n",
 							 unit, unit_sz, unit_sz ? "" : " NULL");*/
@@ -2344,22 +2409,11 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 
 						if (unit_total_temp)
 							free(unit_total_temp);
-					}
-					/*LOG("\n");*/
-				}
-				break;
-		}
-	}
+
 
 finish_proced_ta:
 	if (unit_data)
 		free(unit_data);
-
-	if (fp)
-		fclose(fp);
-
-	if (line)
-		free(line);
 
 	return ret;
 }
