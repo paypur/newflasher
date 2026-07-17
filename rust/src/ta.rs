@@ -12,6 +12,20 @@ pub struct TrimArea {
     pub data: ByteVec
 }
 
+impl TrimArea {
+    pub fn new(partition: u8, unit: usize, bytes: &[u8]) -> Self {
+        Self {
+            partition,
+            unit,
+            data: ByteVec::from(bytes)
+        }
+    }
+
+    pub fn new_empty(partition: u8, unit: usize) -> Self {
+        Self::new(partition, unit, &[])
+    }
+}
+
 #[derive(PartialEq, Debug)]
 enum TAParseState {
     Partition,

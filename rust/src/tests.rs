@@ -52,11 +52,20 @@ mod tests {
 
     #[test]
     fn test_ta_files() {
-        test_both_ta("../../XQ-EC72_Customized_HK_69.2.A.4.90/auto-boot.ta", TrimArea { partition: 2, unit: 0x907, data: ByteVec::from([0x0]) });
-        test_both_ta("../../XQ-EC72_Customized_HK_69.2.A.4.90/CustomerID_S20000480_001_HK_c001526.ta", TrimArea { partition: 2, unit: 0x87B, data: ByteVec::from([0x63, 0x30, 0x30, 0x31, 0x35, 0x32, 0x36]) });
-        test_both_ta("../../XQ-EC72_Customized_HK_69.2.A.4.90/osv-restriction.ta", TrimArea { partition: 2, unit: 0x91A, data: ByteVec::from([0x0]) });
-        test_both_ta("../../XQ-EC72_Customized_HK_69.2.A.4.90/reset-kernel-cmd-debug.ta", TrimArea { partition: 2, unit: 0x9A9, data: ByteVec::from([0x0]) });
-        test_both_ta("../../XQ-EC72_Customized_HK_69.2.A.4.90/reset-retail-demo-active-sts.ta", TrimArea { partition: 2, unit: 0xA1E, data: ByteVec::new() });
+        test_both_ta("../../XQ-EC72_Customized_HK_69.2.A.4.90/auto-boot.ta", Some(TrimArea::new(2, 0x907, &[0x0])));
+        test_both_ta("../../XQ-EC72_Customized_HK_69.2.A.4.90/CustomerID_S20000480_001_HK_c001526.ta", Some(TrimArea::new(2, 0x87B, &[0x63, 0x30, 0x30, 0x31, 0x35, 0x32, 0x36])));
+        test_both_ta("../../XQ-EC72_Customized_HK_69.2.A.4.90/osv-restriction.ta", Some(TrimArea::new(2, 0x91A, &[0x0])));
+        test_both_ta("../../XQ-EC72_Customized_HK_69.2.A.4.90/reset-kernel-cmd-debug.ta", Some(TrimArea::new(2, 0x9A9, &[0x0])));
+        test_both_ta("../../XQ-EC72_Customized_HK_69.2.A.4.90/reset-retail-demo-active-sts.ta", Some(TrimArea::new_empty(2, 0xA1E)));
+
+        test_both_ta("../../H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/auto-boot.ta", Some(TrimArea::new(2, 0x90C, &[0x0])));
+        test_both_ta("../../H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/cust-reset.ta", Some(TrimArea::new(2, 0x8A4, &[0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0])));
+        test_both_ta("../../H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/master-reset.ta", Some(TrimArea::new(2, 0x9F6, &[0x1])));
+        test_both_ta("../../H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/osv-restriction.ta", Some(TrimArea::new(2, 0x91A, &[0x0])));
+        test_both_ta("../../H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/reset-kernel-cmd-debug.ta", Some(TrimArea::new(2, 0x9A9, &[0x0])));
+        test_both_ta("../../H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/reset-non-secure-adb.ta", Some(TrimArea::new_empty(2, 0x9B6)));
+        test_both_ta("../../H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/reset-wipe-reason.ta", Some(TrimArea::new_empty(2, 0x9F9)));
+        test_both_ta("../../H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/simlock.ta", None);
     }
 
     // https://android.googlesource.com/platform/system/core/+/master/fastboot/README.md
@@ -97,7 +106,7 @@ mod tests {
     fn test_fastboot_flashmode() {
         let mut usb = get_device().lock().unwrap();
 
-        usb.download(&[0u8]).unwrap();
+        usb.download(&[1u8]).unwrap();
         usb.command_expect("Write-TA:2:10100", FastbootHeader::Okay).unwrap();
     }
 
@@ -149,19 +158,22 @@ mod tests {
         assert_eq!(parseoct(c"a777z".as_ptr(), 5), 0b111111111);
     }
 
-    fn test_both_ta(file: &str, expected: TrimArea) {
+    fn test_both_ta(file: &str, expected: Option<TrimArea>) {
         let path = PathBuf::from(file);
         let string = CString::new(path.to_str().unwrap()).unwrap();
         let cstr = string.as_ptr();
 
-        let ta_rs = process_trim_area(&path).unwrap().unwrap();
+        let ta_rs = process_trim_area(&path).unwrap();
         let ta_c = unsafe { process_ta_file_c(cstr) };
 
         assert_eq!(ta_rs, expected);
-        assert_eq!(ta_c.partition, expected.partition);
-        assert_eq!(ta_c.unit, expected.unit);
-        assert_eq!(ta_c.size, expected.data.len());
-        assert_eq!(unsafe { from_raw_parts(ta_c.data, ta_c.size) }, expected.data.as_slice());
+
+        if let Some(ex) = expected {
+            assert_eq!(ta_c.partition, ex.partition);
+            assert_eq!(ta_c.unit, ex.unit);
+            assert_eq!(ta_c.size, ex.data.len());
+            assert_eq!(unsafe { from_raw_parts(ta_c.data, ta_c.size) }, ex.data.as_slice());
+        }
     }
 
     fn reply_str<'a>(usb: &'a mut FastbootDevice, cmd: &str) -> &'a str {
