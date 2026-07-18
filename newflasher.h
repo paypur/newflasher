@@ -3,12 +3,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-enum FastbootReply {
+enum FastbootHeader {
     FR_ERROR = 0,
-    FR_NO_HEADER,
     FR_OKAY,
     FR_DATA,
     FR_FAIL,
+    FR_NO_HEADER,
 };
 
 struct CVec {
@@ -42,7 +42,7 @@ bool is_end_of_archive(const char *p);
 void trim(char *ptr);
 
 
-enum FastbootReply get_reply_ffi(HANDLE handle);
+enum FastbootHeader get_reply_ffi(HANDLE handle);
 
 bool get_data_ffi(HANDLE handle, const char *cmd);
 bool fastboot_cmd_ffi(HANDLE handle, const char *cmd, char *reply_buf, size_t reply_buf_len);
