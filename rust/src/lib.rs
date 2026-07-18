@@ -63,6 +63,21 @@ pub extern "C" fn get_reply_ffi(device_ptr: *mut FastbootDeviceFFI) -> FastbootH
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn get_data_ffi(device_ptr: *mut FastbootDeviceFFI, cmd: *const c_char) -> bool {
+    let mut usb: FastbootDevice = device_ptr.into();
+    let cstr = unsafe { CStr::from_ptr(cmd) }.to_string_lossy();
+
+    if let Err(e) = usb.get_data(cstr.as_ref()) {
+        error!("{}", e);
+        unsafe { ptr::write(device_ptr, FastbootDeviceFFI::from(usb)) };
+        return false;
+    };
+
+    unsafe { ptr::write(device_ptr, FastbootDeviceFFI::from(usb)) };
+    true
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn fastboot_cmd_ffi(device_ptr: *mut FastbootDeviceFFI, cmd: *const c_char, str: *mut u8, len: usize) -> bool {
     let mut usb: FastbootDevice = device_ptr.into();
     let cstr = unsafe { CStr::from_ptr(cmd) }.to_string_lossy();
@@ -76,7 +91,7 @@ pub extern "C" fn fastboot_cmd_ffi(device_ptr: *mut FastbootDeviceFFI, cmd: *con
     if str as *const u8 != ptr::null() && len != 0 {
         let min_len = len.min(usb.reply.len());
 
-        let string = unsafe { slice::from_raw_parts_mut(str, min_len) };
+        let string = unsafe { slice::from_raw_parts_mut(str, len) };
         string[..min_len].clone_from_slice(&usb.reply[..min_len]);
 
         // write the null terminator for C strings

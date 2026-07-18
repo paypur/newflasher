@@ -187,7 +187,7 @@ impl FastbootDevice {
     }
 
     /// For commands that require multiple reads to receive the actual data
-    /// used by, Get-root-key-hash, Read-TA:2:2475
+    /// used by, Get-root-key-hash, Get-ufs-info, Read-TA:2:2475, and more
     pub fn get_data(&mut self, cmd: &str) -> Result<()> {
         let mut body = || -> Result<()> {
             self.write(cmd.as_bytes())?;
