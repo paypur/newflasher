@@ -43,6 +43,8 @@ void trim(char *ptr);
 
 
 enum FastbootReply get_reply_ffi(HANDLE handle);
+
+bool get_data_ffi(HANDLE handle, const char *cmd);
 bool fastboot_cmd_ffi(HANDLE handle, const char *cmd, char *reply_buf, size_t reply_buf_len);
 bool fastboot_download_ffi(HANDLE handle, const char *data, size_t len);
 uint32_t getvar_u32_ffi(HANDLE handle, const char *cmd, uint32_t fallback);
