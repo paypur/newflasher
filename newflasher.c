@@ -3275,8 +3275,8 @@ int main(int argc, char *argv[])
 	fastboot_cmd_ffi(dev, "getvar:Sake-root", sake_root, sizeof(sake_root));
 
 	// this is also writing the key into tmp_reply, so we can convert it into hex in get_root_key_hash after
-	fastboot_cmd_ffi(dev, "Get-root-key-hash", get_root_key_hash, sizeof(get_root_key_hash));
-	memset(get_root_key_hash, 0, sizeof(get_root_key_hash));
+	get_data_ffi(dev, "Get-root-key-hash");
+	memcpy(get_root_key_hash, dev->vec.ptr, dev->vec.len);
 
 	for (i=0, j=0; i < (int) dev->vec.len; ++i, j+=2) {
 		sprintf(get_root_key_hash+j, "%02X", dev->vec.ptr[i] & 0xff);
