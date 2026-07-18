@@ -59,7 +59,7 @@ pub extern "C" fn verify_checksum(ptr: *const c_char) -> bool {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn is_end_of_archive(ptr: *const c_char) -> bool {
-    for n in 511..=0 {
+    for n in (0..512).rev() {
         if unsafe { *ptr.add(n) } != b'\0' as c_char {
             return false;
         }

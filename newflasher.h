@@ -37,7 +37,7 @@ int parseoct(const char *p, size_t n);
 int verify_checksum(const char *p);
 
 /* Returns true if this is 512 zero bytes. */
-int is_end_of_archive(const char *p);
+bool is_end_of_archive(const char *p);
 
 void trim(char *ptr);
 
