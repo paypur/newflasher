@@ -70,3 +70,23 @@ pub extern "C" fn is_end_of_archive(ptr: *const c_char) -> bool {
 pub fn trim_rs(string: &mut String) {
     string.retain(|c| c != ' ' && c != '\t' && c != '\n' && c != '\r');
 }
+
+pub fn print_hex_ascii(message: &str, buffer: &[u8]) {
+    println!("{}:", message);
+
+    buffer.chunks(16)
+        .enumerate()
+        .for_each(|(i, chunk)| {
+            println!("{:07X}0  {:<48} {}", i, chunk.iter().map(|b| format!("{b:02X} ")).collect::<String>(), u8_ascii(chunk))
+        });
+
+    println!();
+}
+
+fn u8_ascii(line: &[u8]) -> String {
+    line.iter()
+        .map(|b| match *b as char {
+            '\n' | '\r' | '\t' => ' ',
+            c => c,
+        }).collect::<String>()
+}

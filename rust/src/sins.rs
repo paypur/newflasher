@@ -7,11 +7,30 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, ErrorKind, Read, Seek, Write};
 use std::os::raw::{c_char};
 use std::path::{Path, PathBuf};
-use anyhow::ensure;
+use anyhow::{ensure, Context};
 use tar::{Archive, Entry, EntryType};
 
 unsafe extern "C" {
+    static current_slot: [u8; 2];
+}
 
+#[unsafe(no_mangle)]
+pub extern "C" fn process_sins_ffi(device_ptr: *mut FastbootDeviceFFI, filename: *mut c_char, endcommand: *mut c_char) -> bool {
+    unsafe {
+        let mut usb: FastbootDevice = device_ptr.into();
+
+        let file_path = PathBuf::from(CStr::from_ptr(filename).to_string_lossy().as_ref());
+        let cmd = CStr::from_ptr(endcommand).to_string_lossy();
+
+        if let Err(e) = process_sins_rs(&mut usb, file_path, cmd.as_ref()) {
+            eprintln!("{}", e);
+            ptr::write(device_ptr, FastbootDeviceFFI::from(usb));
+            return false;
+        };
+
+        ptr::write(device_ptr, FastbootDeviceFFI::from(usb));
+        true
+    }
 }
 
 //
@@ -40,13 +59,15 @@ pub fn process_sins_rs(
     // _working_dir: PathBuf,
     // out_dir: PathBuf, // partition
     fb_end_cmd: &str, // Repartition
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> anyhow::Result<()> {
     if !fb_end_cmd.is_ascii() {
         panic!();
     }
 
     let mut keep_userdata: bool = true;
-    let mut current_slot: *const c_char = CStr::from_bytes_until_nul(b"a\0")?.as_ptr();
+
+    let working_path = std::env::current_dir()?;
+    println!("cwd {}", working_path.to_string_lossy());
 
     let mut magic_numbers = [0u8; 2];
     let mut sin_file = File::open(&sin_path)?;
@@ -56,23 +77,15 @@ pub fn process_sins_rs(
 
     let mut has_slot = false;
 
-    let reader: Box<dyn Read> = match magic_numbers {
-        [0x1F, 0x8B] => Box::new(GzDecoder::new(sin_file)),
-        _ => Box::new(sin_file)
-    };
-
-    let mut archive = Archive::new(reader);
-
     let mut file_found_in_updatexml: bool = false;
 
     let base_fn = sin_path.file_name().unwrap().to_str().unwrap();
 
-    let working_path = std::env::current_dir()?;
 
     let update_xml_path = working_path.join("update.xml");
 
     if update_xml_path.is_file() {
-        if unsafe { keep_userdata } {
+        if keep_userdata {
             file_found_in_updatexml = check_in_updatexml_rs(&update_xml_path, base_fn);
         }
     }
@@ -84,51 +97,80 @@ pub fn process_sins_rs(
 
     println!(" - Extracting from {}", base_fn);
 
-    let mut entries = Vec::new();
-
-    for entry in archive.entries()? {
-        let entry = entry?;
-        match entry.header().entry_type() {
-            EntryType::Regular | EntryType::Continuous => entries.push(entry),
-            et => println!(" - Ignoring {:?}", et),
-        }
-    }
-
-    let mut entry_prefix_opt: Option<String> = None;
-
-    for entry in entries.iter() {
-        if entry.size() == 0 {
-            return Err(Box::new(io::Error::new(ErrorKind::InvalidData, "tar entry contained 0 bytes!".to_string())));
+    let flash_prefix = {
+        let reader: Box<dyn Read> = match magic_numbers {
+            [0x1F, 0x8B] => Box::new(GzDecoder::new(sin_file)),
+            _ => Box::new(sin_file)
         };
 
-        let name = CStr::from_bytes_until_nul(&entry.header().as_ustar().unwrap().name)?;
-        let prefix = Path::new(name.to_string_lossy().as_ref()).with_extension("").to_string_lossy().to_string();
+        let mut archive = Archive::new(reader);
 
-        match &entry_prefix_opt {
-            None => entry_prefix_opt = Some(prefix),
-            Some(prefix_) => if *prefix_ != prefix {
-                return Err(Box::new(io::Error::new(ErrorKind::InvalidData, format!("Mismatched tar entry name! Expected {prefix_}, got {prefix}"))));
-            }
+        let mut prefix_iter = archive.entries()?
+            // TODO: move into fn
+            .filter_map(|entry| {
+                let e = entry.ok()?;
+
+                if e.size() == 0 {
+                    return None
+                }
+
+                match e.header().entry_type() {
+                    EntryType::Regular | EntryType::Continuous => Some(e),
+                    et => {
+                        println!(" - Ignoring {:?}", et);
+                        None
+                    }
+                }
+            })
+            .map(|entry| {
+                // ensure!(entry.size() != 0, "Tar entry contained 0 bytes!");
+                let name = CStr::from_bytes_until_nul(&entry.header().as_ustar()?.name).ok()?;
+                Some(Path::new(name.to_string_lossy().as_ref()).with_extension("").to_string_lossy().to_string())
+            })
+            .into_iter();
+
+        let flash_prefix = match prefix_iter.next().flatten() {
+            Some(prefix) => prefix,
+            None => return Err(anyhow::Error::msg("Empty tar entry name!"))
+        };
+
+        if !prefix_iter.all(|opt| opt.map(|s| s == flash_prefix).is_some()) {
+            return Err(anyhow::Error::msg("Mismatched tar entry name!"));
         }
-    }
 
-    let flash_prefix = entry_prefix_opt.unwrap();
+        flash_prefix
+    };
 
-    for (i, mut entry) in entries.into_iter().enumerate() {
+    // need to reopen the archive and create a new iterator
+    // since we used the iterator already
+    let sin_file = File::open(&sin_path)?;
+
+    let reader: Box<dyn Read> = match magic_numbers {
+        [0x1F, 0x8B] => Box::new(GzDecoder::new(sin_file)),
+        _ => Box::new(sin_file)
+    };
+
+    let mut archive = Archive::new(reader);
+
+    for (i, mut entry) in archive.entries()?.into_iter().flatten()
+        .filter(|e| match e.header().entry_type() {
+            EntryType::Regular | EntryType::Continuous => true,
+            et => {
+                println!(" - Ignoring {:?}", et);
+                false
+            }
+        })
+        .enumerate() {
         let file_size = entry.size();
         let entry_name = CStr::from_bytes_until_nul(&entry.header().as_ustar().unwrap().name)?.to_string_lossy().to_string();
         if i == 0 {
             transfer_cms(usb, &mut entry, &entry_name)?;
         } else {
-            panic!();
             println!(" - Uploading sparse chunk {}", entry_name);
 
-            // chunk file into smaller buffer
             usb.download_tar_entry(&mut entry)?;
 
-            println!("      OKAY.");
-
-            let slot = unsafe { CStr::from_ptr(current_slot) }.to_bytes();
+            let slot = unsafe { current_slot.as_ref() };
 
             // erase partition
             if i == 1 && fb_end_cmd == "flash" {
@@ -157,11 +199,11 @@ pub fn process_sins_rs(
                 usb.write_and_expect_reply(erase_cmd.as_bytes(), FastbootHeader::Okay)?;
             }
 
-            let mut command = String::new();
+            let mut command : String;
 
             /* Oreo changed partition image name, so this is a quick fix */
             if fb_end_cmd == "Repartition" && flash_prefix.starts_with("partitionimage_") {
-                command = flash_prefix.replace("partitionimage", "Repartition");
+                command = flash_prefix.replace("partitionimage_", "Repartition:");
             } else {
                 command = format!("{fb_end_cmd}:{flash_prefix}");
 
@@ -189,15 +231,15 @@ pub fn process_sins_rs(
     Ok(())
 }
 
-pub fn transfer_cms(usb: &mut FastbootDevice, mut entry: &mut Entry<Box<dyn Read>>, entry_name: &str) -> anyhow::Result<()> {
+pub fn transfer_cms(usb: &mut FastbootDevice, entry: &mut Entry<Box<dyn Read>>, entry_name: &str) -> anyhow::Result<()> {
     let mut is_2021_device: bool = false;
 
     let hex_len = ByteVec::from_len(entry.size() as usize);
-    println!(" - Uploading signature {}", entry_name);
+    println!(" - Uploading signature: {}", entry_name);
 
     let cstr = CStr::from_bytes_until_nul(&entry.header().as_ustar().unwrap().name)?.to_string_lossy();
-    let string = format!("{entry_name}.cms");
-    ensure!(cstr == string, "Invalid cms string!");
+    // let string = format!("{entry_name}.cms");
+    ensure!(cstr == entry_name, "Invalid cms string!");
 
     loop { // repeat_here
         let cmd_str = if is_2021_device {
@@ -209,7 +251,7 @@ pub fn transfer_cms(usb: &mut FastbootDevice, mut entry: &mut Entry<Box<dyn Read
         println!("      {}", cmd_str);
 
         if !cmd_str.is_ascii() {
-            error!("     - Invalid command string: {}", cmd_str);
+            eprintln!("     - Invalid command string: {}", cmd_str);
         }
 
         if usb.write_and_read_reply(cmd_str.as_bytes()).expect("      Error writing signature command!") == FastbootHeader::Fail && !is_2021_device {
@@ -222,9 +264,14 @@ pub fn transfer_cms(usb: &mut FastbootDevice, mut entry: &mut Entry<Box<dyn Read
 
     ensure!(hex_len == usb.reply, format!("Invalid DATA reply string, Expected {hex_len:?}, received {}", usb.reply));
 
-    (&mut entry).take(16384);
-    std::io::copy(&mut entry, &mut usb.writer).expect("Error writing signature command!");
-    usb.writer.flush().expect("Error flushing signature command");
+    let mut buf = vec![];
+    entry.read_to_end(&mut buf)?;
+
+    // let written = std::io::copy(entry, &mut usb.writer).context("Error writing signature!")?;
+    // usb.writer.flush_end()?;
+    usb.write(&buf)?;
+
+    // println!("      Wrote {} bytes", written);
 
     let header = usb.read_reply()?;
     ensure!(header == FastbootHeader::Okay, format!("Invalid header! Expected OKAY, received: {header:?}"));
@@ -243,7 +290,7 @@ pub fn check_in_updatexml_rs(xml_file: &Path, searchfor: &str) -> bool {
     let file = match File::open(xml_file) {
         Ok(f) => f,
         Err(e) => {
-            error!("{}", e);
+            eprintln!("{}", e);
             return false;
         },
     };
@@ -263,7 +310,7 @@ pub fn check_in_updatexml_rs(xml_file: &Path, searchfor: &str) -> bool {
                 }
             }
             Err(e) => {
-                error!("{}", e);
+                eprintln!("{}", e);
                 return false;
             }
         }

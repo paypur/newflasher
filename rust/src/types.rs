@@ -9,6 +9,7 @@ use std::io::{Read, Write};
 use std::time::Duration;
 use std::{mem, ptr};
 use tar::Entry;
+use crate::utils::print_hex_ascii;
 
 const IN: u8 = 0x81;
 const OUT: u8 = 0x01;
@@ -23,7 +24,11 @@ impl ByteVec {
     pub fn new() -> Self {
         Self { data: Vec::new() }
     }
-    
+
+    pub fn append(&mut self, vec: &Self) {
+        self.data.extend(vec.as_ref());
+    }
+
     pub fn extend_vec(&mut self, vec: Self) {
         self.data.extend(vec.as_ref());
     }
@@ -98,8 +103,8 @@ impl Display for ByteVec {
 }
 
 impl<T> PartialEq<T> for ByteVec
-    where
-        T: AsRef<[u8]>
+where
+    T: AsRef<[u8]>,
 {
     fn eq(&self, other: &T) -> bool {
         self.data == other.as_ref()
@@ -243,20 +248,21 @@ impl FastbootDevice {
     }
 
     /// Tries to write tar entry to device
-    /// data is chunked in 16KiB parts
     pub fn download_tar_entry(&mut self, entry: &mut Entry<Box<dyn Read>>) -> Result<()> {
         let hex_len = ByteVec::from_len(entry.size() as usize);
-        let cmd = [b"download:", hex_len.as_slice()].concat();
+        let mut cmd = ByteVec::from("download:");
+        cmd.append(&hex_len);
 
+        println!("{}", cmd);
         self.write_and_expect_reply(&cmd, FastbootHeader::Data)?;
         ensure!(hex_len == self.reply, format!("Expected {hex_len}, received {}!", self.reply));
 
-        entry.take(16384);
+        // copy doesn't need to be flushed
         std::io::copy(entry, &mut self.writer).with_context(|| format!("Failed to download tar entry to device: {:?}", entry.header()))?;
-        self.writer.flush_end().with_context(|| format!("Failed to flush tar entry: {:?}", entry.header()))?;
 
         let header = self.read_reply()?;
         ensure!(header == FastbootHeader::Okay, format!("Expected OKAY header, received {header:?}!"));
+        println!("OKAY");
 
         Ok(())
     }
@@ -267,12 +273,13 @@ impl FastbootDevice {
     }
 
     pub fn write_and_expect_reply(&mut self, cmd: &[u8], expected: FastbootHeader) -> Result<()> {
-        let received= self.write_and_read_reply(cmd)?;
-        ensure!(received == expected, format!("Expected {expected} header, received {received}!"));
+        let received = self.write_and_read_reply(cmd)?;
+        ensure!(received == expected, format!("Expected {expected} header, received {received}: {}", self.reply));
         Ok(())
     }
 
     pub fn write(&mut self, data: &[u8]) -> Result<usize> {
+        print_hex_ascii("WRITE", data);
         self.writer.write_all(data)?;
         self.writer.flush_end()?;
         Ok(data.len())
@@ -281,6 +288,7 @@ impl FastbootDevice {
     /// Strips reply header from self.reply
     pub fn read_reply(&mut self) -> Result<FastbootHeader> {
         let len = self.read()?;
+        print_hex_ascii("READ", self.reply.as_slice());
         if len < 4 { return Ok(FastbootHeader::NoHeader); }
 
         let prefix = FastbootHeader::from(&self.reply[0..4]);

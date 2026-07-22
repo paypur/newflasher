@@ -1,7 +1,8 @@
 #[cfg(test)]
 mod tests {
     use std::ffi::{c_uint, CString};
-    use crate::utils::{file_exist, file_size};
+    use std::fs;
+    use crate::utils::{file_exist, file_size, print_hex_ascii};
     use crate::utils::{parseoct, trim_rs};
     use crate::*;
 
@@ -11,7 +12,7 @@ mod tests {
     use std::slice::from_raw_parts;
     use std::sync::{Mutex, OnceLock};
     use tar::Archive;
-    use crate::sins::{transfer_cms};
+    use crate::sins::{process_sins_rs, transfer_cms};
     use crate::ta::{process_trim_area, TrimArea};
     use crate::xml_parser::{boot_delivery, partition_delivery};
 
@@ -108,6 +109,12 @@ mod tests {
 
         usb.download(&[1u8]).unwrap();
         usb.command_expect("Write-TA:2:10100", FastbootHeader::Okay).unwrap();
+
+        // usb.get_data("Get-ufs-info").unwrap();
+        // print_hex_ascii("READ", usb.reply.as_slice());
+
+        let path = PathBuf::from("../../H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/partition/partition-image-LUN0_X-FLASH-ALL-B6B5.sin");
+        process_sins_rs(&mut usb, path, "Repartition").unwrap();
     }
 
     #[test]
