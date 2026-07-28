@@ -1,0 +1,88 @@
+use crate::sins::process_sins_rs;
+use crate::types::{FastbootDevice, FastbootHeader, Slot};
+use crate::utils::{is_sin_file, is_ta_file};
+use nusb::MaybeFuture;
+use nusb::{Device, Interface};
+use std::fs;
+
+pub mod tests;
+pub mod types;
+pub mod utils;
+pub mod sins;
+pub mod xml_parser;
+pub mod ta;
+
+const VID: u16 = 0x0FCE;
+const PID: u16 = 0xB00B;
+
+fn main() {
+    let mut usb = get_flash_mode_rs(VID, PID);
+
+    /* fastboot variables */
+    let max_download_size = usb.getvar_u32("getvar:max-download-size", 0);
+    let product = usb.getvar_string("getvar:product").unwrap();
+    let version = usb.getvar_string("getvar:version").unwrap();
+    let version_bootloader = usb.getvar_string("getvar:version-bootloader").unwrap();
+    let serial_number = usb.getvar_string("getvar:serialno").unwrap();
+    let is_secure = usb.getvar_string("getvar:secure").unwrap() == "yes";
+    let sector_size = usb.getvar_u32("getvar:Sector-size", 0);
+    let loader_version = usb.getvar_string("getvar:Loader-version").unwrap();
+    let phone_id = usb.getvar_string("getvar:Phone-id").unwrap();
+    let device_id = usb.getvar_string("getvar:Device-id").unwrap();
+    let platform_id = usb.getvar_string("getvar:Platform-id").unwrap();
+    let rooting_status = usb.getvar_string("getvar:Rooting-status").unwrap();
+    let ufs_info = usb.getvar_string("getvar:Ufs-info").unwrap();
+    let emmc_info = usb.getvar_string("getvar:Emmc-info").unwrap();
+    let default_security = usb.getvar_string("getvar:Default-security").unwrap();
+    let keystore_counter = usb.getvar_string("getvar:Keystore-counter").unwrap();
+    let security_state = usb.getvar_string("getvar:Security-state").unwrap();
+    let s1_root = usb.getvar_string("getvar:S1-root").unwrap();
+    let sake_root = usb.getvar_string("getvar:Sake-root").unwrap();
+
+    usb.get_data("Get-root-key-hash").unwrap();
+    let root_key_hash = usb.reply.iter().map(|b| format!("{:02X}", b)).collect::<String>();
+
+    let slot_count = usb.getvar_u32("getvar:slot-count", 1);
+    let current_slot: Slot = usb.getvar_string("getvar:current-slot").unwrap().as_str().into();
+    let battery = usb.getvar_u32("getvar:Battery", 0);
+
+    // TODO: remove this
+    std::env::set_current_dir("../../H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/").unwrap();
+
+    enter_flash_mode(&mut usb);
+
+    println!("Processing ./partition files");
+
+    // TODO: probably should use xml_parser::partition_delivery() instead of this
+    fs::read_dir("./partition/").unwrap()
+        .filter_map(|entry| is_sin_file(entry))
+        .for_each(|path| process_sins_rs(&mut usb, path, "Repartition", current_slot).unwrap());
+
+    println!("Processing .sin files");
+
+    fs::read_dir("./").unwrap()
+        .filter_map(|entry| is_sin_file(entry))
+        .for_each(|path| process_sins_rs(&mut usb, path, "flash", current_slot).unwrap());
+
+    println!("Processing .ta files");
+
+    println!("Processing boot delivery");
+}
+
+fn enter_flash_mode(usb: &mut FastbootDevice) {
+    usb.download(&[1u8]).unwrap();
+    usb.command_expect("Write-TA:2:10100", FastbootHeader::Okay).unwrap();
+}
+
+fn get_flash_mode_rs(vid: u16, pid: u16) -> FastbootDevice {
+    let di = nusb::list_devices()
+        .wait()
+        .unwrap()
+        .find(|d| d.vendor_id() == vid && d.product_id() == pid)
+        .expect("Failed to find device at /dev/bus/usb! Device should be connected via flash mode (green *)");
+
+    let device: Device = di.open().wait().unwrap_or_else(|e| panic!("Failed to open device (VID: {vid}, PID: {pid})\n{e}"));
+    let interface: Interface = device.claim_interface(0).wait().unwrap();
+
+    FastbootDevice::new(device, interface)
+}

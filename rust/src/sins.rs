@@ -1,13 +1,14 @@
+use crate::types::{ByteVec, FastbootDevice, FastbootDeviceFFI, FastbootHeader, Slot};
 use crate::utils::*;
 use crate::*;
+use anyhow::ensure;
 use flate2::read::GzDecoder;
-use log::error;
-use std::ffi::{CStr};
+use std::ffi::CStr;
 use std::fs::File;
-use std::io::{BufRead, BufReader, ErrorKind, Read, Seek, Write};
-use std::os::raw::{c_char};
+use std::io::{BufRead, BufReader, Read, Seek, Write};
+use std::os::raw::c_char;
 use std::path::{Path, PathBuf};
-use anyhow::{ensure, Context};
+use std::ptr;
 use tar::{Archive, Entry, EntryType};
 
 unsafe extern "C" {
@@ -176,7 +177,7 @@ pub fn process_sins_rs(
                 usb.write_and_expect_reply(erase_cmd.as_bytes(), FastbootHeader::Okay)?;
             }
 
-            let mut command : String;
+            let mut command: String;
 
             /* Oreo changed partition image name, so this is a quick fix */
             if fb_end_cmd == "Repartition" && flash_prefix.starts_with("partitionimage_") {
