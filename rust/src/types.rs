@@ -9,6 +9,7 @@ use std::io::{Read, Write};
 use std::time::Duration;
 use std::{mem, ptr};
 use tar::Entry;
+
 use crate::utils::{print_hex_ascii, u8_ascii};
 
 const IN: u8 = 0x81;
@@ -141,8 +142,8 @@ impl Display for ByteVec {
 }
 
 impl<T> PartialEq<T> for ByteVec
-where
-    T: AsRef<[u8]>,
+    where
+        T: AsRef<[u8]>,
 {
     fn eq(&self, other: &T) -> bool {
         self.data == other.as_ref()
