@@ -1,6 +1,6 @@
 use std::ffi::{c_char, CStr};
-use std::fs::File;
-use std::path::Path;
+use std::fs::{DirEntry, File};
+use std::path::{Path, PathBuf};
 use std::slice;
 
 #[unsafe(no_mangle)]
@@ -74,19 +74,32 @@ pub fn trim_rs(string: &mut String) {
 pub fn print_hex_ascii(message: &str, buffer: &[u8]) {
     println!("{}:", message);
 
-    buffer.chunks(16)
-        .enumerate()
-        .for_each(|(i, chunk)| {
-            println!("{:07X}0  {:<48} {}", i, chunk.iter().map(|b| format!("{b:02X} ")).collect::<String>(), u8_ascii(chunk))
-        });
+    if buffer.len() >= 0x400 {
+        println!("skipped {} bytes", buffer.len());
+    } else {
+        buffer.chunks(16)
+            .enumerate()
+            .for_each(|(i, chunk)| {
+                println!("{:07X}0  {:<48} {}", i, chunk.iter().map(|b| format!("{b:02X} ")).collect::<String>(), u8_ascii(chunk))
+            });
+    }
 
     println!();
 }
 
-fn u8_ascii(line: &[u8]) -> String {
+pub fn u8_ascii(line: &[u8]) -> String {
     line.iter()
         .map(|b| match *b as char {
             '\n' | '\r' | '\t' => ' ',
             c => c,
         }).collect::<String>()
+}
+
+pub fn is_sin_file(entry: std::io::Result<DirEntry>) -> Option<PathBuf> {
+    let path = entry.ok()?.path();
+    if path.extension()? == "sin" {
+        Some(path)
+    } else {
+        None
+    }
 }

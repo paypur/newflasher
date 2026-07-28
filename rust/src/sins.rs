@@ -22,7 +22,7 @@ pub extern "C" fn process_sins_ffi(device_ptr: *mut FastbootDeviceFFI, filename:
         let file_path = PathBuf::from(CStr::from_ptr(filename).to_string_lossy().as_ref());
         let cmd = CStr::from_ptr(endcommand).to_string_lossy();
 
-        if let Err(e) = process_sins_rs(&mut usb, file_path, cmd.as_ref()) {
+        if let Err(e) = process_sins_rs(&mut usb, file_path, cmd.as_ref(), if current_slot[0] == b'b' { Slot::B } else { Slot::A }) {
             eprintln!("{}", e);
             ptr::write(device_ptr, FastbootDeviceFFI::from(usb));
             return false;
@@ -33,32 +33,11 @@ pub extern "C" fn process_sins_ffi(device_ptr: *mut FastbootDeviceFFI, filename:
     }
 }
 
-//
-// #[unsafe(no_mangle)]
-// unsafe fn process_sins_fii (
-//     dev: HANDLE,
-//     a: *mut libc::FILE,
-//     filename: *mut c_char,
-//     full_path: *mut c_char,
-//     outfolder: *mut c_char,
-//     endcommand: *mut c_char,
-// ) -> c_int {
-//     unsafe {
-//         process_sins_rs(dev,
-//                         a,
-//                         PathBuf::from(CStr::from_ptr(filename).to_str().unwrap()),
-//                         PathBuf::from(CStr::from_ptr(full_path).to_str().unwrap()),
-//                         PathBuf::from(CStr::from_ptr(outfolder).to_str().unwrap()), endcommand) as c_int
-//     }
-// }
-
 pub fn process_sins_rs(
     usb: &mut FastbootDevice,
-    // mut decompressed_sin: File, // ./partition/converted.file
-    sin_path: PathBuf, // ./partition/partition-image-LUN0_124936192_X-FLASH-ALL-88DF.sin
-    // _working_dir: PathBuf,
-    // out_dir: PathBuf, // partition
-    fb_end_cmd: &str, // Repartition
+    sin_path: PathBuf,
+    fb_end_cmd: &str,
+    curr_slot: Slot,
 ) -> anyhow::Result<()> {
     if !fb_end_cmd.is_ascii() {
         panic!();
@@ -67,7 +46,11 @@ pub fn process_sins_rs(
     let mut keep_userdata: bool = true;
 
     let working_path = std::env::current_dir()?;
-    println!("cwd {}", working_path.to_string_lossy());
+    // println!("cwd {}", working_path.to_string_lossy());
+
+    let prefix = sin_path.file_prefix().unwrap().to_str().unwrap();
+    // TODO: needs to be used
+    let flash_both_slots = prefix == "bootloader" || prefix == "bluetooth" || prefix == "dsp" || prefix == "modem" || prefix == "rdimage";
 
     let mut magic_numbers = [0u8; 2];
     let mut sin_file = File::open(&sin_path)?;
@@ -95,7 +78,7 @@ pub fn process_sins_rs(
         return Ok(());
     }
 
-    println!(" - Extracting from {}", base_fn);
+    println!("Processing {}", base_fn);
 
     let flash_prefix = {
         let reader: Box<dyn Read> = match magic_numbers {
@@ -152,49 +135,43 @@ pub fn process_sins_rs(
 
     let mut archive = Archive::new(reader);
 
-    for (i, mut entry) in archive.entries()?.into_iter().flatten()
+    for (i, mut entry) in archive.entries()?
+        .into_iter()
+        .flatten()
         .filter(|e| match e.header().entry_type() {
             EntryType::Regular | EntryType::Continuous => true,
             et => {
-                println!(" - Ignoring {:?}", et);
+                println!("Ignoring {:?}", et);
                 false
             }
         })
         .enumerate() {
-        let file_size = entry.size();
         let entry_name = CStr::from_bytes_until_nul(&entry.header().as_ustar().unwrap().name)?.to_string_lossy().to_string();
         if i == 0 {
             transfer_cms(usb, &mut entry, &entry_name)?;
         } else {
-            println!(" - Uploading sparse chunk {}", entry_name);
+            println!("Uploading sparse chunk {}", entry_name);
 
             usb.download_tar_entry(&mut entry)?;
-
-            let slot = unsafe { current_slot.as_ref() };
 
             // erase partition
             if i == 1 && fb_end_cmd == "flash" {
                 let mut erase_cmd = format!("erase:{flash_prefix}");
 
-                if slot == b"a" || slot == b"b" {
-                    let getvar_cmd = format!("getvar:has-slot:{flash_prefix}");
-                    usb.command(getvar_cmd.as_str()).unwrap_or_else(|e| panic!("Failed to execute {getvar_cmd}! {e}"));
+                let getvar_cmd = format!("getvar:has-slot:{flash_prefix}");
+                usb.command(getvar_cmd.as_str()).unwrap_or_else(|e| panic!("Failed to execute {getvar_cmd}! {e}"));
 
-                    has_slot = usb.reply == b"yes";
-                    if has_slot {
-                        let is_other = entry_name.contains("_other");
-
-                        let target_slot = match slot {
-                            b"a" => if is_other { "b" } else { "a" },
-                            b"b" => if is_other { "a" } else { "b" },
-                            _ => panic!("This should be impossible to reach"),
-                        };
-
-                        erase_cmd.extend(["_", target_slot])
-                    }
+                has_slot = usb.reply == b"yes";
+                if has_slot {
+                    let target_slot = if entry_name.contains("_other") {
+                        curr_slot.other()
+                    } else {
+                        curr_slot
+                    };
+                    erase_cmd.extend(["_", target_slot.into()])
                 }
 
-                println!("      {erase_cmd}");
+                println!("    {erase_cmd}");
 
                 usb.write_and_expect_reply(erase_cmd.as_bytes(), FastbootHeader::Okay)?;
             }
@@ -208,23 +185,20 @@ pub fn process_sins_rs(
                 command = format!("{fb_end_cmd}:{flash_prefix}");
 
                 if has_slot {
-                    let is_other = entry_name.contains("_other");
-
-                    let target_slot = match slot {
-                        b"a" => if is_other { "b" } else { "a" },
-                        b"b" => if is_other { "a" } else { "b" },
-                        _ => panic!("This should be impossible to reach"),
+                    let target_slot = if entry_name.contains("_other") {
+                        curr_slot.other()
+                    } else {
+                        curr_slot
                     };
-
-                    command.extend(["_", target_slot])
+                    command.extend(["_", target_slot.into()])
                 }
             }
 
-            println!("      {command}");
+            println!("    {command}");
 
             usb.write_and_expect_reply(command.as_bytes(), FastbootHeader::Okay)?;
 
-            println!("      OKAY.");
+            println!("    OKAY");
         }
     }
 
@@ -235,7 +209,7 @@ pub fn transfer_cms(usb: &mut FastbootDevice, entry: &mut Entry<Box<dyn Read>>, 
     let mut is_2021_device: bool = false;
 
     let hex_len = ByteVec::from_len(entry.size() as usize);
-    println!(" - Uploading signature: {}", entry_name);
+    println!("- Uploading signature: {}", entry_name);
 
     let cstr = CStr::from_bytes_until_nul(&entry.header().as_ustar().unwrap().name)?.to_string_lossy();
     // let string = format!("{entry_name}.cms");
@@ -248,14 +222,14 @@ pub fn transfer_cms(usb: &mut FastbootDevice, entry: &mut Entry<Box<dyn Read>>, 
             format!("signature:{}", hex_len)
         };
 
-        println!("      {}", cmd_str);
+        println!("    {}", cmd_str);
 
         if !cmd_str.is_ascii() {
-            eprintln!("     - Invalid command string: {}", cmd_str);
+            eprintln!("    Invalid command string: {}", cmd_str);
         }
 
-        if usb.write_and_read_reply(cmd_str.as_bytes()).expect("      Error writing signature command!") == FastbootHeader::Fail && !is_2021_device {
-            println!("      device from 2021 and up?");
+        if usb.write_and_read_reply(cmd_str.as_bytes()).expect("    Error writing signature command!") == FastbootHeader::Fail && !is_2021_device {
+            println!("    device from 2021 and up?");
             is_2021_device = true;
             continue; // goto repeat_here
         }
@@ -276,11 +250,11 @@ pub fn transfer_cms(usb: &mut FastbootDevice, entry: &mut Entry<Box<dyn Read>>, 
     let header = usb.read_reply()?;
     ensure!(header == FastbootHeader::Okay, format!("Invalid header! Expected OKAY, received: {header:?}"));
 
-    println!("      OKAY.");
+    println!("    OKAY.");
 
     if is_2021_device {
         usb.write_and_expect_reply(b"signature", FastbootHeader::Okay)?;
-        println!("      OKAY.");
+        println!("    OKAY.");
     }
 
     Ok(())

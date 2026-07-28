@@ -4,17 +4,51 @@ use log::error;
 use nusb::io::{EndpointRead, EndpointWrite};
 use nusb::transfer::{Bulk, In, Out};
 use nusb::{Device, Interface};
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::io::{Read, Write};
 use std::time::Duration;
 use std::{mem, ptr};
 use tar::Entry;
-use crate::utils::print_hex_ascii;
+use crate::utils::{print_hex_ascii, u8_ascii};
 
 const IN: u8 = 0x81;
 const OUT: u8 = 0x01;
 
-#[derive(AsRef, Debug, Deref, DerefMut, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Slot {
+    A,
+    B
+}
+
+impl Slot {
+    pub fn other(&self) -> Self {
+        match self {
+            Slot::A => Slot::B,
+            Slot::B => Slot::A
+        }
+    }
+}
+
+impl From<&str> for Slot {
+    fn from(value: &str) -> Self {
+        match value {
+            "a" | "A" => Slot::A,
+            "b" | "B" => Slot::B,
+            _ => panic!("Invalid slot: {}", value)
+        }
+    }
+}
+
+impl From<Slot> for &str {
+    fn from(value: Slot) -> Self {
+        match value {
+            Slot::A => "a",
+            Slot::B => "b"
+        }
+    }
+}
+
+#[derive(AsRef, Deref, DerefMut, PartialEq)]
 #[repr(C)]
 pub struct ByteVec {
     data: Vec<u8>
@@ -94,11 +128,15 @@ impl FromIterator<u8> for ByteVec {
     }
 }
 
+impl Debug for ByteVec {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", u8_ascii(&self.data))
+    }
+}
+
 impl Display for ByteVec {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        unsafe {
-            write!(f, "{}", &self.data.iter().map(|&b| char::from_u32_unchecked(b as u32)).collect::<String>())
-        }
+        write!(f, "{}", u8_ascii(&self.data))
     }
 }
 
@@ -171,14 +209,14 @@ pub struct FastbootDevice {
 }
 
 const BUFFER_SIZE: usize = 1024;
-const NUM_TRANSFERS: usize = 4;
+const NUM_TRANSFERS: usize = 16;
 const TEN_SEC: Duration = Duration::from_secs(10);
 
 impl FastbootDevice {
     pub fn new(device: Device, interface: Interface) -> Self {
         let reader = interface.endpoint::<Bulk, In>(IN).unwrap().reader(BUFFER_SIZE).with_num_transfers(NUM_TRANSFERS).with_read_timeout(TEN_SEC);
         let writer = interface.endpoint::<Bulk, Out>(OUT).unwrap().writer(BUFFER_SIZE).with_num_transfers(NUM_TRANSFERS).with_write_timeout(TEN_SEC);
-        let vec = Vec::<u8>::with_capacity(32);
+        let vec = Vec::<u8>::with_capacity(256);
         Self { device, interface, reader, writer, reply: vec.into() }
     }
 
@@ -253,7 +291,7 @@ impl FastbootDevice {
         let mut cmd = ByteVec::from("download:");
         cmd.append(&hex_len);
 
-        println!("{}", cmd);
+        println!("    {}", cmd);
         self.write_and_expect_reply(&cmd, FastbootHeader::Data)?;
         ensure!(hex_len == self.reply, format!("Expected {hex_len}, received {}!", self.reply));
 
@@ -284,7 +322,7 @@ impl FastbootDevice {
 
         let header = self.read_reply()?;
         ensure!(header == FastbootHeader::Okay, format!("Expected OKAY header, received {header:?}!"));
-        println!("OKAY");
+        println!("    OKAY");
 
         Ok(())
     }
@@ -305,6 +343,11 @@ impl FastbootDevice {
         self.writer.write_all(data)?;
         self.writer.flush_end()?;
         Ok(data.len())
+    }
+
+    pub fn getvar_string(&mut self, cmd: &str) -> Result<String> {
+        self.command(cmd)?;
+        Ok(String::from_utf8(self.reply.as_ref().clone()).expect(&format!("Failed to parse {:?} as str", self.reply)))
     }
 
     /// Strips reply header from self.reply
