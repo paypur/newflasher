@@ -257,8 +257,30 @@ impl FastbootDevice {
         self.write_and_expect_reply(&cmd, FastbootHeader::Data)?;
         ensure!(hex_len == self.reply, format!("Expected {hex_len}, received {}!", self.reply));
 
-        // copy doesn't need to be flushed
-        std::io::copy(entry, &mut self.writer).with_context(|| format!("Failed to download tar entry to device: {:?}", entry.header()))?;
+        // TODO: fix this for real
+        if entry.size() >= 0x10 && entry.size() < 0x200000 {
+            // copy doesn't need to be flushed
+            std::io::copy(entry, &mut self.writer).with_context(|| format!("Failed to download tar entry to device: {:?}", entry.header()))?;
+            println!("WRITE:\nskipped {} bytes", entry.size());
+        } else {
+            let mut buffer = Vec::<u8>::new();
+            let mut adapter = entry.take(0x200000); // 2MiB
+
+            loop {
+                buffer.clear();
+                adapter.read_to_end(&mut buffer)?;
+
+                if buffer.is_empty() {
+                    break;
+                }
+
+                self.writer.write_all(&buffer).with_context(|| "Failed to download tar entry to device".to_string())?;
+
+                adapter.set_limit(0x200000);
+            }
+        }
+
+        self.writer.flush()?;
 
         let header = self.read_reply()?;
         ensure!(header == FastbootHeader::Okay, format!("Expected OKAY header, received {header:?}!"));
