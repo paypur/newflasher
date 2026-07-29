@@ -103,3 +103,12 @@ pub fn is_sin_file(entry: std::io::Result<DirEntry>) -> Option<PathBuf> {
         None
     }
 }
+
+pub fn is_ta_file(entry: std::io::Result<DirEntry>) -> Option<PathBuf> {
+    let path = entry.ok()?.path();
+    if path.extension()? == "ta" {
+        Some(path)
+    } else {
+        None
+    }
+}
