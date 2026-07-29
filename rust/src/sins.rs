@@ -277,8 +277,7 @@ pub fn check_in_updatexml_rs(xml_file: &Path, searchfor: &str) -> bool {
             Ok(mut str) => {
                 if !str.is_empty() {
                     trim_rs(&mut str);
-                    if str.contains("<NOERASE>") && str.contains(searchfor)
-                    {
+                    if str == format!("<NOERASE>{searchfor}</NOERASE>") {
                         println!("{}", str);
                         return true;
                     }

@@ -4,6 +4,7 @@ use crate::utils::{is_sin_file, is_ta_file};
 use nusb::MaybeFuture;
 use nusb::{Device, Interface};
 use std::fs;
+use crate::ta::{flash_trim_area, process_trim_area};
 
 pub mod tests;
 pub mod types;
@@ -51,22 +52,30 @@ fn main() {
 
     enter_flash_mode(&mut usb);
 
-    println!("Processing ./partition files");
+    println!("Processing ./partition files  ──────────────────────────────────────────────────────────────────────\n");
 
     // TODO: probably should use xml_parser::partition_delivery() instead of this
     fs::read_dir("./partition/").unwrap()
         .filter_map(|entry| is_sin_file(entry))
         .for_each(|path| process_sins_rs(&mut usb, path, "Repartition", current_slot).unwrap());
 
-    println!("Processing .sin files");
+    println!("Processing .sin files ──────────────────────────────────────────────────────────────────────────────\n");
 
     fs::read_dir("./").unwrap()
         .filter_map(|entry| is_sin_file(entry))
         .for_each(|path| process_sins_rs(&mut usb, path, "flash", current_slot).unwrap());
 
-    println!("Processing .ta files");
+    println!("Processing .ta files ───────────────────────────────────────────────────────────────────────────────\n");
 
-    println!("Processing boot delivery");
+    fs::read_dir("./").unwrap()
+        .filter_map(|entry| is_ta_file(entry))
+        .map(|path| process_trim_area(path).unwrap()) // can't recover from this error
+        .flatten()
+        .for_each(|path| flash_trim_area(&mut usb, path).unwrap());
+
+    println!("Processing boot delivery  ──────────────────────────────────────────────────────────────────────────\n");
+
+    todo!()
 }
 
 fn enter_flash_mode(usb: &mut FastbootDevice) {

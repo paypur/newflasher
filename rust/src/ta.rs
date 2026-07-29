@@ -34,7 +34,7 @@ enum TAParseState {
     Complete
 }
 
-pub fn process_trim_area(ta_file: &PathBuf) -> anyhow::Result<Option<TrimArea>> {
+pub fn process_trim_area(ta_file: PathBuf) -> anyhow::Result<Option<TrimArea>> {
     let mut partition: u8 = 0;
     let mut unit: usize = 0;
     let mut unit_data = ByteVec::new();
@@ -98,12 +98,13 @@ pub fn process_trim_area(ta_file: &PathBuf) -> anyhow::Result<Option<TrimArea>> 
                 };
 
                 if size == 0 {
-                    println!(" - Found specific unit which doesn't contain data.");
-                    state = TAParseState::Complete;
-                    continue;
+                    println!(" - Found specific unit which doesn't contain data\n");
+                    return Ok(None);
+                    // state = TAParseState::Complete;
+                    // continue;
                 }
 
-                println!(" - Unit size: 0x{size:x}");
+                println!(" - Unit size: 0x{size:x}\n");
 
                 unit_data = parse_hex_string(&line[offset..]).with_context(|| format!("Error parsing unit data: {}", &line[offset..]))?;
 
@@ -131,111 +132,17 @@ pub fn process_trim_area(ta_file: &PathBuf) -> anyhow::Result<Option<TrimArea>> 
     Ok(Some(TrimArea{partition, unit, data: unit_data}))
 }
 
+pub fn flash_trim_area(usb: &mut FastbootDevice, ta: TrimArea) -> anyhow::Result<()> {
+    usb.download(ta.data.as_slice())?;
+    println!("    OKAY.");
 
+    let cmd = format!("Write-TA:{}:{}", ta.partition, ta.unit);
+    println!("    {}", cmd);
+    usb.command(cmd.as_str())?;
+    println!("    OKAY.");
 
-/*        /*LOG("\n<<-------------------- Retrieval finished! Found unit: %s,"
-            " Unit size: %04X, Unit data:%s\n",
-             unit, unit_sz, unit_sz ? "" : " NULL");*/
-        // TODO:
-        unit_data = parse_hex_string(unit_data)?;
-
-        command = format!("download:{:08x}", unit_size).into();
-        println!("      {}", command);
-        println!("      DATA: {unit_data}");*/
-                            // TODO
-                            /*                    if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command)) < 1) {
-                                                    println!("      Error writing download command!\n");
-                                                    ret = 0;
-                                                    goto
-                                                    finish_proced_ta;
-                                                }
-
-                                                if (!get_reply_ffi(dev)) {
-                                                    println!("      Error, no download DATA reply!\n");
-                                                    ret = 0;
-                                                    goto
-                                                    finish_proced_ta;
-                                                }
-
-                                                if (strlen(dev->vec.ptr) != 12) {
-                                                    println!("      Error, download DATA reply size: %zu less than expected: 12!\n", strlen(dev->vec.ptr));
-                                                    ret = 0;
-                                                    goto
-                                                    finish_proced_ta;
-                                                }
-
-                                                if (memcmp(dev->vec.ptr + 4, command + 9, 8) != 0) {
-                                                    println!("      Error, download DATA reply string: %s is not equal to expected: DATA%s!\n", dev->vec.ptr, command + 9);
-                                                    ret = 0;
-                                                    goto
-                                                    finish_proced_ta;
-                                                }
-
-                                                if (unit_sz > 0)
-                                                {
-                                                    if (transfer_bulk_ffi(dev, EP_OUT, unit_data, unit_sz) < 1) {
-                                                        println!("      Error writing unit data!\n");
-                                                        ret = 0;
-                                                        goto
-                                                        finish_proced_ta;
-                                                    }
-                                                }
-
-                                                if (!get_reply_ffi(dev)) {
-                                                    println!("      Error, no OKAY reply!\n");
-                                                    ret = 0;
-                                                    goto
-                                                    finish_proced_ta;
-                                                }
-
-                                                if (strlen(dev->vec.ptr) < 4) {
-                                                    println!("      Error, reply less than 4, got: %zu bytes!\n", strlen(dev->vec.ptr));
-                                                    ret = 0;
-                                                    goto
-                                                    finish_proced_ta;
-                                                }
-
-                                                if (memcmp(dev->vec.ptr, "OKAY", 4) != 0) {
-                                                    println!("      Error, didn't got OKAY reply! Got reply: %s\n", dev->vec.ptr);
-                                                    ret = 0;
-                                                    goto
-                                                    finish_proced_ta;
-                                                }
-
-                                                println!("      OKAY.\n");
-
-                                                snprintln!(command, sizeof(command), "Write-TA:%u:%u", partition, unit_dec);
-                                                println!("      %s\n", command);
-
-                                                if (transfer_bulk_ffi(dev, EP_OUT, command, strlen(command)) < 1) {
-                                                    println!("      Error writing command WriteTA!\n");
-                                                    ret = 0;
-                                                    goto
-                                                    finish_proced_ta;
-                                                }
-
-                                                if (!get_reply_ffi(dev)) {
-                                                    println!("      Error, no OKAY reply!\n");
-                                                    ret = 0;
-                                                    goto
-                                                    finish_proced_ta;
-                                                }
-
-                                                if (strlen(dev->vec.ptr) < 4) {
-                                                    println!("      Error, reply less than 4, got: %zu bytes!\n", strlen(dev->vec.ptr));
-                                                    ret = 0;
-                                                    goto
-                                                    finish_proced_ta;
-                                                }
-
-                                                if (memcmp(dev->vec.ptr, "OKAY", 4) != 0) {
-                                                    println!("      Error, didn't got OKAY reply! Got reply: %s\n", dev->vec.ptr);
-                                                    ret = 0;
-                                                    goto
-                                                    finish_proced_ta;
-                                                }
-
-                                                println!("      OKAY.\n");*/
+    Ok(())
+}
 
 pub fn is_blacklisted(unit: usize) -> bool {
     /*
