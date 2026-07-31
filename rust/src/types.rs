@@ -49,7 +49,7 @@ impl From<Slot> for &str {
     }
 }
 
-#[derive(AsRef, Deref, DerefMut, PartialEq)]
+#[derive(AsRef, Deref, DerefMut, Default, PartialEq)]
 #[repr(C)]
 pub struct ByteVec {
     data: Vec<u8>
@@ -80,7 +80,7 @@ impl ByteVec {
 
     pub fn as_hexadecimal(&self) -> Result<u32> {
         let str = str::from_utf8(&self.data)?;
-        let n = u32::from_str_radix(str, 16)?;
+        let n = u32::from_str_radix(str, 16).with_context(|| format!("String: \"{str}\""))?;
         Ok(n)
     }
 }
@@ -131,13 +131,13 @@ impl FromIterator<u8> for ByteVec {
 
 impl Debug for ByteVec {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", u8_ascii(&self.data))
+        write!(f, "{}", &self.data.iter().map(|&b| b as char).collect::<String>() )
     }
 }
 
 impl Display for ByteVec {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", u8_ascii(&self.data))
+        write!(f, "{}", &self.data.iter().map(|&b| b as char).collect::<String>() )
     }
 }
 
@@ -348,7 +348,7 @@ impl FastbootDevice {
 
     pub fn getvar_string(&mut self, cmd: &str) -> Result<String> {
         self.command(cmd)?;
-        Ok(String::from_utf8(self.reply.as_ref().clone()).expect(&format!("Failed to parse {:?} as str", self.reply)))
+        Ok(String::from_utf8(self.reply.as_ref().clone()).expect(&format!("Failed to parse {} as str", self.reply)))
     }
 
     /// Strips reply header from self.reply

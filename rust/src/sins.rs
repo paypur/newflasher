@@ -237,7 +237,7 @@ pub fn transfer_cms(usb: &mut FastbootDevice, entry: &mut Entry<Box<dyn Read>>, 
         break;
     }
 
-    ensure!(hex_len == usb.reply, format!("Invalid DATA reply string, Expected {hex_len:?}, received {}", usb.reply));
+    ensure!(hex_len == usb.reply, format!("Invalid DATA reply string, Expected {hex_len}, received {}", usb.reply));
 
     let mut buf = vec![];
     entry.read_to_end(&mut buf)?;
