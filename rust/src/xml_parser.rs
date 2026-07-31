@@ -1,4 +1,5 @@
 use anyhow::Context;
+use regex::regex;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
@@ -11,14 +12,43 @@ pub struct BootDelivery {
     pub space_id: Option<String>,
     pub configurations: Vec<BootConfiguration>,
 }
-
 #[derive(Debug, Default)]
 pub struct BootConfiguration {
-    pub name: Option<String>,
-    pub attributes: Option<String>,
-    pub hw_config_rev: Option<String>,
-    pub boot_config: Option<String>,
+    pub name: String,
+    pub platform_id: String,
+    pub plf_root_hash: String,
+    pub hw_config_rev: String,
+    pub boot_config: String,
     pub boot_images: Vec<String>,
+}
+
+impl BootConfiguration {
+    fn builder() -> BootConfigurationBuilder {
+        BootConfigurationBuilder::default()
+    }
+}
+
+#[derive(Debug, Default)]
+struct BootConfigurationBuilder {
+    name: Option<String>,
+    platform_id: String,
+    plf_root_hash: String,
+    hw_config_rev: Option<String>,
+    boot_config: Option<String>,
+    boot_images: Vec<String>,
+}
+
+impl BootConfigurationBuilder {
+    pub fn build(self) -> Option<BootConfiguration> {
+        Some(BootConfiguration {
+            name: self.name?,
+            platform_id: self.platform_id,
+            plf_root_hash: self.plf_root_hash,
+            hw_config_rev: self.hw_config_rev?,
+            boot_config: self.boot_config?,
+            boot_images: self.boot_images,
+        })
+    }
 }
 
 const BOOT_DELIVERY_ELEMENT: &str = "BOOT_DELIVERY";
@@ -43,7 +73,7 @@ pub fn boot_delivery(path: impl AsRef<Path>) -> anyhow::Result<BootDelivery> {
 
     let mut element_stack = Vec::<String>::new();
     let mut boot_delivery = BootDelivery::default();
-    let mut config = BootConfiguration::default();
+    let mut builder = BootConfiguration::builder();
 
     for event in reader {
         let event = event?;
@@ -54,27 +84,34 @@ pub fn boot_delivery(path: impl AsRef<Path>) -> anyhow::Result<BootDelivery> {
                 }
 
                 if name.local_name == CONFIGURATION_ELEMENT {
-                    config = BootConfiguration::default();
-                    config.name = attribute_value(&attrs, NAME_ATTRIBUTE);
+                    builder = BootConfiguration::builder();
+                    builder.name = attribute_value(&attrs, NAME_ATTRIBUTE);
                 }
 
                 if element_stack.iter().any(|e| e == CONFIGURATION_ELEMENT) {
                     if name.local_name == ATTRIBUTES_ELEMENT {
-                        config.attributes = config.attributes.or_else(|| attribute_value(&attrs, VALUE_ATTRIBUTE));
+                        let regex = regex!(r#"PLATFORM_ID="([0-9A-F]{8})";PLF_ROOT_HASH="([0-9A-F]{48}|[0-9A-F]{32})"#);
+
+                        if let Some(val) = attribute_value(&attrs, VALUE_ATTRIBUTE) {
+                            if let Some(cap) = regex.captures(val.as_str()) {
+                                builder.platform_id = cap.get(1).unwrap().as_str().to_string();
+                                builder.plf_root_hash = cap.get(2).unwrap().as_str().to_string();
+                            }
+                        }
                     }
 
                     if name.local_name == HWCONFIG_ELEMENT {
-                        config.hw_config_rev = config.hw_config_rev.or_else(|| attribute_value(&attrs, REVISION_ATTRIBUTE));
+                        builder.hw_config_rev = builder.hw_config_rev.or_else(|| attribute_value(&attrs, REVISION_ATTRIBUTE));
                     }
 
                     if element_stack.last().is_some_and(|e| e == BOOT_CONFIG_ELEMENT) {
-                        config.boot_config = config.boot_config.or_else(|| attribute_value(&attrs, PATH_ATTRIBUTE));
+                        builder.boot_config = builder.boot_config.or_else(|| attribute_value(&attrs, PATH_ATTRIBUTE));
                     }
 
                     if element_stack.last().is_some_and(|e| e == BOOT_IMAGES_ELEMENT) {
                         if name.local_name == FILE_ELEMENT {
                             if let Some(path) = attribute_value(&attrs, PATH_ATTRIBUTE) {
-                                config.boot_images.push(path);
+                                builder.boot_images.push(path);
                             }
                         }
                     }
@@ -86,8 +123,13 @@ pub fn boot_delivery(path: impl AsRef<Path>) -> anyhow::Result<BootDelivery> {
                 pop_element(&mut element_stack, &name.local_name)?;
 
                 if name.local_name == CONFIGURATION_ELEMENT {
-                    boot_delivery.configurations.push(config);
-                    config = BootConfiguration::default();
+                    let option = builder.build();
+                    if let Some(bd) = option {
+                        boot_delivery.configurations.push(bd);
+                        builder = BootConfiguration::builder();
+                    } else {
+                        panic!("boot configuration is missing required fields");
+                    }
                 }
             }
             _ => {}
