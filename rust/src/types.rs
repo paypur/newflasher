@@ -28,6 +28,13 @@ impl Slot {
             Slot::B => Slot::A
         }
     }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Slot::A => "a",
+            Slot::B => "b"
+        }
+    }
 }
 
 impl From<&str> for Slot {
@@ -40,12 +47,9 @@ impl From<&str> for Slot {
     }
 }
 
-impl From<Slot> for &str {
-    fn from(value: Slot) -> Self {
-        match value {
-            Slot::A => "a",
-            Slot::B => "b"
-        }
+impl Display for Slot {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
