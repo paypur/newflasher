@@ -1,70 +1,53 @@
-use crate::types::{ByteVec, FastbootDevice, FastbootDeviceFFI, FastbootHeader, Slot};
+use crate::types::{ByteVec, FastbootDevice, FastbootHeader, Slot};
 use crate::utils::*;
-use crate::*;
-use anyhow::ensure;
+use anyhow::{ensure, Context};
 use flate2::read::GzDecoder;
 use std::ffi::CStr;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Read, Seek, Write};
-use std::os::raw::c_char;
+use std::io::{BufRead, BufReader, Read, Seek};
 use std::path::{Path, PathBuf};
-use std::ptr;
 use tar::{Archive, Entry, EntryType};
 
-unsafe extern "C" {
-    static current_slot: [u8; 2];
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn process_sins_ffi(device_ptr: *mut FastbootDeviceFFI, filename: *mut c_char, endcommand: *mut c_char) -> bool {
-    unsafe {
-        let mut usb: FastbootDevice = device_ptr.into();
-
-        let file_path = PathBuf::from(CStr::from_ptr(filename).to_string_lossy().as_ref());
-        let cmd = CStr::from_ptr(endcommand).to_string_lossy();
-
-        if let Err(e) = process_sins_rs(&mut usb, file_path, cmd.as_ref(), if current_slot[0] == b'b' { Slot::B } else { Slot::A }) {
-            eprintln!("{}", e);
-            ptr::write(device_ptr, FastbootDeviceFFI::from(usb));
-            return false;
-        };
-
-        ptr::write(device_ptr, FastbootDeviceFFI::from(usb));
-        true
-    }
-}
-
-pub fn process_sins_rs(
+pub fn process_sins(
     usb: &mut FastbootDevice,
     sin_path: PathBuf,
     fb_end_cmd: &str,
     curr_slot: Slot,
 ) -> anyhow::Result<()> {
+
+    let flash_prefix = validate_prefix(sin_path.as_path())?;
+
+    let flash_both_slots =  flash_prefix == "bootloader" || flash_prefix == "bluetooth" || flash_prefix == "dsp" || flash_prefix == "modem" || flash_prefix == "rdimage";
+
+    process_sins_slot(usb, &sin_path, fb_end_cmd, flash_prefix.as_str(), curr_slot)?;
+
+    // TODO: try to avoid reading the entry twice
+    if flash_both_slots {
+        process_sins_slot(usb, &sin_path, fb_end_cmd, flash_prefix.as_str(), curr_slot.other())?;
+    }
+
+    Ok(())
+}
+
+fn process_sins_slot(
+    usb: &mut FastbootDevice,
+    sin_path: &Path,
+    fb_end_cmd: &str,
+    flash_prefix: &str,
+    target_slot: Slot,
+) -> anyhow::Result<()> {
     if !fb_end_cmd.is_ascii() {
         panic!();
     }
 
+    // TODO: move to main
     let mut keep_userdata: bool = true;
 
     let working_path = std::env::current_dir()?;
-    // println!("cwd {}", working_path.to_string_lossy());
-
-    let prefix = sin_path.file_prefix().unwrap().to_str().unwrap();
-    // TODO: needs to be used
-    let flash_both_slots = prefix == "bootloader" || prefix == "bluetooth" || prefix == "dsp" || prefix == "modem" || prefix == "rdimage";
-
-    let mut magic_numbers = [0u8; 2];
-    let mut sin_file = File::open(&sin_path)?;
-
-    sin_file.read_exact(magic_numbers.as_mut_slice())?;
-    sin_file.rewind()?;
-
-    let mut has_slot = false;
 
     let mut file_found_in_updatexml: bool = false;
 
     let base_fn = sin_path.file_name().unwrap().to_str().unwrap();
-
 
     let update_xml_path = working_path.join("update.xml");
 
@@ -75,166 +58,176 @@ pub fn process_sins_rs(
     }
 
     if file_found_in_updatexml {
-        println!(" - Skipping {}", base_fn);
+        println!(" Skipping {}", base_fn);
         return Ok(());
     }
 
     println!("Processing {}", base_fn);
 
-    let flash_prefix = {
-        let reader: Box<dyn Read> = match magic_numbers {
-            [0x1F, 0x8B] => Box::new(GzDecoder::new(sin_file)),
-            _ => Box::new(sin_file)
-        };
-
-        let mut archive = Archive::new(reader);
-
-        let mut prefix_iter = archive.entries()?
-            // TODO: move into fn
-            .filter_map(|entry| {
-                let e = entry.ok()?;
-
-                if e.size() == 0 {
-                    return None
-                }
-
-                match e.header().entry_type() {
-                    EntryType::Regular | EntryType::Continuous => Some(e),
-                    et => {
-                        println!(" - Ignoring {:?}", et);
-                        None
-                    }
-                }
-            })
-            .map(|entry| {
-                // ensure!(entry.size() != 0, "Tar entry contained 0 bytes!");
-                let name = CStr::from_bytes_until_nul(&entry.header().as_ustar()?.name).ok()?;
-                Some(Path::new(name.to_string_lossy().as_ref()).with_extension("").to_string_lossy().to_string())
-            })
-            .into_iter();
-
-        let flash_prefix = match prefix_iter.next().flatten() {
-            Some(prefix) => prefix,
-            None => return Err(anyhow::Error::msg("Empty tar entry name!"))
-        };
-
-        if !prefix_iter.all(|opt| opt.map(|s| s == flash_prefix).is_some()) {
-            return Err(anyhow::Error::msg("Mismatched tar entry name!"));
-        }
-
-        flash_prefix
-    };
-
-    // need to reopen the archive and create a new iterator
-    // since we used the iterator already
-    let sin_file = File::open(&sin_path)?;
-
-    let reader: Box<dyn Read> = match magic_numbers {
-        [0x1F, 0x8B] => Box::new(GzDecoder::new(sin_file)),
-        _ => Box::new(sin_file)
-    };
-
-    let mut archive = Archive::new(reader);
-
-    for (i, mut entry) in archive.entries()?
-        .into_iter()
-        .flatten()
-        .filter(|e| match e.header().entry_type() {
-            EntryType::Regular | EntryType::Continuous => true,
-            et => {
-                println!("Ignoring {:?}", et);
+    let has_slot = fb_end_cmd == "flash" && {
+        let cmd = format!("getvar:has-slot:{flash_prefix}");
+        match usb.command(cmd.as_str()) {
+            Ok(_) => usb.reply == b"yes",
+            Err(e) => {
+                eprintln!("{e}");
                 false
             }
-        })
+        }
+    };
+
+    for (i, mut entry) in open_sin_archive(&sin_path)?.entries()?
+        .into_iter()
+        .flatten()
+        .filter(|e| filter_entry(e))
         .enumerate() {
         let entry_name = CStr::from_bytes_until_nul(&entry.header().as_ustar().unwrap().name)?.to_string_lossy().to_string();
         if i == 0 {
             transfer_cms(usb, &mut entry, &entry_name)?;
         } else {
             println!("Uploading sparse chunk {}", entry_name);
-
             usb.download_tar_entry(&mut entry)?;
 
             // erase partition
             if i == 1 && fb_end_cmd == "flash" {
-                let mut erase_cmd = format!("erase:{flash_prefix}");
+                let erase = format!("erase:{flash_prefix}");
 
-                let getvar_cmd = format!("getvar:has-slot:{flash_prefix}");
-                usb.command(getvar_cmd.as_str()).unwrap_or_else(|e| panic!("Failed to execute {getvar_cmd}! {e}"));
+                let erase_current = format!("{erase}_{}", target_slot);
+                let erase_other = format!("{erase}_{}", target_slot.other());
 
-                has_slot = usb.reply == b"yes";
-                if has_slot {
-                    let target_slot = if entry_name.contains("_other") {
-                        curr_slot.other()
-                    } else {
-                        curr_slot
+                // if flash_both_slots && has_slot {
+                //     println!("    {erase_current}");
+                //     usb.write_and_expect_reply(erase_current.as_bytes(), FastbootHeader::Okay)?;
+                //     println!("    {erase_other}");
+                //     usb.write_and_expect_reply(erase_other.as_bytes(), FastbootHeader::Okay)?;
+                // } else {
+                    let cmd = match (has_slot, entry_name.contains("_other")) {
+                        (false, _) => erase,
+                        (true, true) => erase_other,
+                        (true, false) => erase_current,
                     };
-                    erase_cmd.extend(["_", target_slot.into()])
-                }
 
-                println!("    {erase_cmd}");
-
-                usb.write_and_expect_reply(erase_cmd.as_bytes(), FastbootHeader::Okay)?;
+                    println!("    {cmd}");
+                    usb.write_and_expect_reply(cmd.as_bytes(), FastbootHeader::Okay)?;
+                // }
             }
-
-            let mut command: String;
 
             /* Oreo changed partition image name, so this is a quick fix */
             if fb_end_cmd == "Repartition" && flash_prefix.starts_with("partitionimage_") {
-                command = flash_prefix.replace("partitionimage_", "Repartition:");
+                let command = flash_prefix.replace("partitionimage_", "Repartition:");
+                println!("    {command}");
+                usb.write_and_expect_reply(command.as_bytes(), FastbootHeader::Okay)?;
+                println!("    OKAY");
             } else {
-                command = format!("{fb_end_cmd}:{flash_prefix}");
-
+/*                if flash_both_slots {
+                    flash_entry(usb, fb_end_cmd, &flash_prefix, Some(target_slot))?;
+                    // TODO: command not authenticated??
+                    flash_entry(usb, fb_end_cmd, &flash_prefix, Some(target_slot.other()))?;
+                } else*/
                 if has_slot {
-                    let target_slot = if entry_name.contains("_other") {
-                        curr_slot.other()
-                    } else {
-                        curr_slot
+                    let target_slot = match entry_name.contains("_other") {
+                        true => target_slot.other(),
+                        false => target_slot
                     };
-                    command.extend(["_", target_slot.into()])
+                    flash_entry(usb, fb_end_cmd, &flash_prefix, Some(target_slot))?;
+                } else {
+                    flash_entry(usb, fb_end_cmd, &flash_prefix, None)?;
                 }
             }
-
-            println!("    {command}");
-
-            usb.write_and_expect_reply(command.as_bytes(), FastbootHeader::Okay)?;
-
-            println!("    OKAY");
         }
     }
 
     Ok(())
 }
 
-pub fn transfer_cms(usb: &mut FastbootDevice, entry: &mut Entry<Box<dyn Read>>, entry_name: &str) -> anyhow::Result<()> {
+
+
+fn flash_entry(usb: &mut FastbootDevice, fb_end_cmd: &str, flash_prefix: &str, target: Option<Slot>) -> anyhow::Result<()> {
+    let command = match target {
+        Some(slot) => format!("{fb_end_cmd}:{flash_prefix}_{slot}"),
+        None => format!("{fb_end_cmd}:{flash_prefix}")
+    };
+
+    println!("    {command}");
+    usb.write_and_expect_reply(command.as_bytes(), FastbootHeader::Okay)?;
+    println!("    OKAY");
+
+    Ok(())
+}
+
+fn validate_prefix(sin_path: &Path) -> anyhow::Result<String> {
+    let mut archive = open_sin_archive(&sin_path)?;
+
+    let mut prefix_iter = archive.entries()?
+        .flatten()
+        .filter(|e| filter_entry(e))
+        .map(|entry| {
+            // ensure!(entry.size() != 0, "Tar entry contained 0 bytes!");
+            let name = CStr::from_bytes_until_nul(&entry.header().as_ustar()?.name).ok()?;
+            Some(Path::new(name.to_string_lossy().as_ref()).with_extension("").to_string_lossy().to_string())
+        })
+        .into_iter();
+
+    let flash_prefix = match prefix_iter.next().flatten() {
+        Some(prefix) => prefix,
+        None => return Err(anyhow::Error::msg("Empty tar entry name!"))
+    };
+
+    if !prefix_iter.all(|opt| opt.map(|s| s == flash_prefix).is_some()) {
+        return Err(anyhow::Error::msg("Mismatched tar entry name!"));
+    }
+
+    Ok(flash_prefix)
+}
+
+fn open_sin_archive(sin_path: &Path) -> anyhow::Result<Archive<Box<dyn Read>>> {
+    let mut sin_file = File::open(sin_path)?;
+
+    let mut magic_numbers = [0u8; 2];
+
+    sin_file.read_exact(magic_numbers.as_mut_slice())?;
+    sin_file.rewind()?;
+
+    let reader: Box<dyn Read> = match magic_numbers {
+        [0x1F, 0x8B] => Box::new(GzDecoder::new(sin_file)),
+        _ => Box::new(sin_file)
+    };
+
+    Ok(Archive::new(reader))
+}
+
+fn filter_entry(entry: &Entry<Box<dyn Read>>) -> bool {
+    if entry.size() == 0 {
+        return false;
+    }
+    match entry.header().entry_type() {
+        EntryType::Regular | EntryType::Continuous => true,
+        et => {
+            println!("Ignoring {:?}", et);
+            false
+        }
+    }
+}
+
+fn transfer_cms(usb: &mut FastbootDevice, entry: &mut Entry<Box<dyn Read>>, entry_name: &str) -> anyhow::Result<()> {
     let mut is_2021_device: bool = false;
 
     let hex_len = ByteVec::from_len(entry.size() as usize);
     println!("- Uploading signature: {}", entry_name);
 
     let cstr = CStr::from_bytes_until_nul(&entry.header().as_ustar().unwrap().name)?.to_string_lossy();
-    // let string = format!("{entry_name}.cms");
     ensure!(cstr == entry_name, "Invalid cms string!");
 
-    loop { // repeat_here
-        let cmd_str = if is_2021_device {
-            format!("download:{}", hex_len)
-        } else {
-            format!("signature:{}", hex_len)
-        };
+    let cmd = format!("signature:{hex_len}");
+    println!("    {cmd}");
 
-        println!("    {}", cmd_str);
+    if usb.write_and_read_reply(cmd.as_bytes()).context("Error writing signature command!")? == FastbootHeader::Fail {
+        is_2021_device = true;
+        println!("device from 2021 and up?");
 
-        if !cmd_str.is_ascii() {
-            eprintln!("    Invalid command string: {}", cmd_str);
-        }
+        let cmd = format!("download:{hex_len}");
+        println!("    {cmd}");
 
-        if usb.write_and_read_reply(cmd_str.as_bytes()).expect("    Error writing signature command!") == FastbootHeader::Fail && !is_2021_device {
-            println!("    device from 2021 and up?");
-            is_2021_device = true;
-            continue; // goto repeat_here
-        }
-        break;
+        usb.write_and_read_reply(cmd.as_bytes()).context("Error writing signature command!")?;
     }
 
     ensure!(hex_len == usb.reply, format!("Invalid DATA reply string, Expected {hex_len}, received {}", usb.reply));
@@ -261,7 +254,7 @@ pub fn transfer_cms(usb: &mut FastbootDevice, entry: &mut Entry<Box<dyn Read>>, 
     Ok(())
 }
 
-pub fn check_in_updatexml_rs(xml_file: &Path, searchfor: &str) -> bool {
+fn check_in_updatexml_rs(xml_file: &Path, searchfor: &str) -> bool {
     let file = match File::open(xml_file) {
         Ok(f) => f,
         Err(e) => {

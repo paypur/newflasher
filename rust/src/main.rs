@@ -1,4 +1,4 @@
-use crate::sins::process_sins_rs;
+use crate::sins::{process_sins};
 use crate::types::{FastbootDevice, FastbootHeader, Slot};
 use crate::utils::{is_sin_file, is_ta_file};
 use nusb::MaybeFuture;
@@ -64,13 +64,13 @@ fn main() {
     // TODO: probably should use xml_parser::partition_delivery() instead of this
     fs::read_dir("./partition/").unwrap()
         .filter_map(|entry| is_sin_file(entry))
-        .for_each(|path| process_sins_rs(&mut usb, path, "Repartition", current_slot).unwrap());
+        .for_each(|path| process_sins(&mut usb, path, "Repartition", current_slot).unwrap());
 
     println!("Processing .sin files ──────────────────────────────────────────────────────────────────────────────\n");
 
     fs::read_dir("./").unwrap()
         .filter_map(|entry| is_sin_file(entry))
-        .for_each(|path| process_sins_rs(&mut usb, path, "flash", current_slot).unwrap());
+        .for_each(|path| process_sins(&mut usb, path, "flash", current_slot).unwrap());
 
     println!("Processing .ta files ───────────────────────────────────────────────────────────────────────────────\n");
 
@@ -100,7 +100,7 @@ fn main() {
                         for img in &bc.boot_images {
                             let path = PathBuf::from(format!("./boot/{}", img));
                             if img.contains("bootloader") {
-                                process_sins_rs(&mut usb, path, "flash", current_slot).unwrap();
+                                process_sins(&mut usb, path, "flash", current_slot).unwrap();
                             } else {
                                 println!("Skipping non bootloader {} file", path.display());
                             }
@@ -132,7 +132,7 @@ fn exit_flash_mode(usb: &mut FastbootDevice) {
 }
 
 fn set_active_slot(usb: &mut FastbootDevice, slot: Slot) {
-    let s: &str = slot.into();
+    let s: &str = slot.as_str();
     let cmd = format!("set_active:{s}");
     usb.command_expect(cmd.as_str(), FastbootHeader::Okay).unwrap();
 }
