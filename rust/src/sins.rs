@@ -6,6 +6,7 @@ use std::ffi::CStr;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Seek};
 use std::path::{Path, PathBuf};
+use log::{debug, error, info};
 use tar::{Archive, Entry, EntryType};
 
 pub fn process_sins(
@@ -58,18 +59,18 @@ fn process_sins_slot(
     }
 
     if file_found_in_updatexml {
-        println!(" Skipping {}", base_fn);
+        info!("Skipping {}", base_fn);
         return Ok(());
     }
 
-    println!("Processing {}", base_fn);
+    info!("Processing {}", base_fn);
 
     let has_slot = fb_end_cmd == "flash" && {
         let cmd = format!("getvar:has-slot:{flash_prefix}");
         match usb.command(cmd.as_str()) {
             Ok(_) => usb.reply == b"yes",
             Err(e) => {
-                eprintln!("{e}");
+                error!("{e}");
                 false
             }
         }
@@ -84,7 +85,7 @@ fn process_sins_slot(
         if i == 0 {
             transfer_cms(usb, &mut entry, &entry_name)?;
         } else {
-            println!("Uploading sparse chunk {}", entry_name);
+            info!("Uploading sparse chunk {}", entry_name);
             usb.download_tar_entry(&mut entry)?;
 
             // erase partition
@@ -106,7 +107,7 @@ fn process_sins_slot(
                         (true, false) => erase_current,
                     };
 
-                    println!("    {cmd}");
+                    debug!("    {cmd}");
                     usb.write_and_expect_reply(cmd.as_bytes(), FastbootHeader::Okay)?;
                 // }
             }
@@ -114,9 +115,9 @@ fn process_sins_slot(
             /* Oreo changed partition image name, so this is a quick fix */
             if fb_end_cmd == "Repartition" && flash_prefix.starts_with("partitionimage_") {
                 let command = flash_prefix.replace("partitionimage_", "Repartition:");
-                println!("    {command}");
+                debug!("    {command}");
                 usb.write_and_expect_reply(command.as_bytes(), FastbootHeader::Okay)?;
-                println!("    OKAY");
+                debug!("    OKAY");
             } else {
 /*                if flash_both_slots {
                     flash_entry(usb, fb_end_cmd, &flash_prefix, Some(target_slot))?;
@@ -147,9 +148,9 @@ fn flash_entry(usb: &mut FastbootDevice, fb_end_cmd: &str, flash_prefix: &str, t
         None => format!("{fb_end_cmd}:{flash_prefix}")
     };
 
-    println!("    {command}");
+    debug!("    {command}");
     usb.write_and_expect_reply(command.as_bytes(), FastbootHeader::Okay)?;
-    println!("    OKAY");
+    debug!("    OKAY");
 
     Ok(())
 }
@@ -202,7 +203,7 @@ fn filter_entry(entry: &Entry<Box<dyn Read>>) -> bool {
     match entry.header().entry_type() {
         EntryType::Regular | EntryType::Continuous => true,
         et => {
-            println!("Ignoring {:?}", et);
+            debug!("Ignoring {:?}", et);
             false
         }
     }
@@ -212,20 +213,20 @@ fn transfer_cms(usb: &mut FastbootDevice, entry: &mut Entry<Box<dyn Read>>, entr
     let mut is_2021_device: bool = false;
 
     let hex_len = ByteVec::from_len(entry.size() as usize);
-    println!("- Uploading signature: {}", entry_name);
+    info!("- Uploading signature: {}", entry_name);
 
     let cstr = CStr::from_bytes_until_nul(&entry.header().as_ustar().unwrap().name)?.to_string_lossy();
     ensure!(cstr == entry_name, "Invalid cms string!");
 
     let cmd = format!("signature:{hex_len}");
-    println!("    {cmd}");
+    info!("    {cmd}");
 
     if usb.write_and_read_reply(cmd.as_bytes()).context("Error writing signature command!")? == FastbootHeader::Fail {
         is_2021_device = true;
-        println!("device from 2021 and up?");
+        info!("device from 2021 and up?");
 
         let cmd = format!("download:{hex_len}");
-        println!("    {cmd}");
+        info!("    {cmd}");
 
         usb.write_and_read_reply(cmd.as_bytes()).context("Error writing signature command!")?;
     }
@@ -244,11 +245,11 @@ fn transfer_cms(usb: &mut FastbootDevice, entry: &mut Entry<Box<dyn Read>>, entr
     let header = usb.read_reply()?;
     ensure!(header == FastbootHeader::Okay, format!("Invalid header! Expected OKAY, received: {header:?}"));
 
-    println!("    OKAY.");
+    info!("    OKAY");
 
     if is_2021_device {
         usb.write_and_expect_reply(b"signature", FastbootHeader::Okay)?;
-        println!("    OKAY.");
+        info!("    OKAY");
     }
 
     Ok(())
@@ -258,7 +259,7 @@ fn check_in_updatexml_rs(xml_file: &Path, searchfor: &str) -> bool {
     let file = match File::open(xml_file) {
         Ok(f) => f,
         Err(e) => {
-            eprintln!("{}", e);
+            error!("{}", e);
             return false;
         },
     };
@@ -271,14 +272,13 @@ fn check_in_updatexml_rs(xml_file: &Path, searchfor: &str) -> bool {
                 if !str.is_empty() {
                     trim_rs(&mut str);
                     if str == format!("<NOERASE>{searchfor}</NOERASE>") {
-                        println!("{}", str);
+                        debug!("{}", str);
                         return true;
                     }
                 }
             }
             Err(e) => {
-                eprintln!("{}", e);
-                return false;
+                error!("{}", e);
             }
         }
     }

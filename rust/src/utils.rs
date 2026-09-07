@@ -1,7 +1,9 @@
+use std::fmt::Write;
 use std::ffi::{c_char, CStr};
 use std::fs::{DirEntry, File};
 use std::path::{Path, PathBuf};
 use std::slice;
+use log::{log_enabled, trace, Level};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn file_exist(ptr: *const c_char) -> i32 {
@@ -71,20 +73,21 @@ pub fn trim_rs(string: &mut String) {
     string.retain(|c| c != ' ' && c != '\t' && c != '\n' && c != '\r');
 }
 
-pub fn print_hex_ascii(message: &str, buffer: &[u8]) {
-    println!("{}:", message);
+pub fn trace_formatted_hex(message: &str, buffer: &[u8]) {
+    if log_enabled!(Level::Trace) {
+        let mut builder = String::with_capacity(0xF00);
 
-    if buffer.len() >= 0x400 {
-        println!("skipped {} bytes", buffer.len());
-    } else {
+        let _ = writeln!(builder, "{}:", message);
+
         buffer.chunks(16)
+            .take(64)
             .enumerate()
             .for_each(|(i, chunk)| {
-                println!("{:07X}0  {:<48} {}", i, chunk.iter().map(|b| format!("{b:02X} ")).collect::<String>(), u8_ascii(chunk))
+                let _ = writeln!(builder, "0x{i:07X}0  {:<48} {}", chunk.iter().map(|b| format!("{b:02X} ")).collect::<String>(), u8_ascii(chunk));
             });
-    }
 
-    println!();
+        trace!("{builder}");
+    }
 }
 
 pub fn u8_ascii(line: &[u8]) -> String {
