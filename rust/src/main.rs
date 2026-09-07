@@ -1,10 +1,11 @@
 use crate::sins::{process_sins};
 use crate::types::{FastbootDevice, FastbootHeader, Slot};
-use crate::utils::{is_sin_file, is_ta_file};
+use crate::utils::{is_sin_file, is_ta_file, trace_formatted_hex};
 use nusb::MaybeFuture;
 use nusb::{Device, Interface};
 use std::fs;
 use std::path::PathBuf;
+use log::{debug, error, info, log};
 use crate::ta::{flash_trim_area, process_trim_area};
 use crate::xml_parser::boot_delivery;
 
@@ -19,6 +20,10 @@ const VID: u16 = 0x0FCE;
 const PID: u16 = 0xB00B;
 
 fn main() {
+    env_logger::builder()
+        .format_timestamp(None)
+        .init();
+
     let mut usb = get_flash_mode_rs(VID, PID);
 
     /* fastboot variables */
@@ -59,31 +64,31 @@ fn main() {
 
     enter_flash_mode(&mut usb);
 
-    println!("Processing ./partition files ───────────────────────────────────────────────────────────────────────\n");
+    info!("Processing ./partition files ───────────────────────────────────────────────────────────────────────\n");
 
     // TODO: probably should use xml_parser::partition_delivery() instead of this
     fs::read_dir("./partition/").unwrap()
         .filter_map(|entry| is_sin_file(entry))
         .for_each(|path| process_sins(&mut usb, path, "Repartition", current_slot).unwrap());
 
-    println!("Processing .sin files ──────────────────────────────────────────────────────────────────────────────\n");
+    info!("Processing .sin files ──────────────────────────────────────────────────────────────────────────────\n");
 
     fs::read_dir("./").unwrap()
         .filter_map(|entry| is_sin_file(entry))
         .for_each(|path| process_sins(&mut usb, path, "flash", current_slot).unwrap());
 
-    println!("Processing .ta files ───────────────────────────────────────────────────────────────────────────────\n");
+    info!("Processing .ta files ───────────────────────────────────────────────────────────────────────────────\n");
 
     fs::read_dir("./").unwrap()
         .filter_map(|entry| is_ta_file(entry))
         .map(|path| process_trim_area(path).unwrap()) // can't recover from this error
         .for_each(|path| flash_trim_area(&mut usb, path).unwrap());
 
-    println!("Processing boot delivery ───────────────────────────────────────────────────────────────────────────\n");
+    info!("Processing boot delivery ───────────────────────────────────────────────────────────────────────────\n");
 
     match boot_delivery(PathBuf::from("./boot/boot_delivery.xml")) {
         Ok(bd) => {
-            println!("{:#?}", bd.configurations);
+            debug!("{:#?}", bd.configurations);
 
             // TODO: why???
             let mut modified = platform_id.clone();
@@ -93,22 +98,20 @@ fn main() {
             bd.configurations.iter()
                 .filter(|bc| bc.platform_id == modified && root_key_hash.contains(bc.plf_root_hash.as_str()))
                 .for_each(|bc| {
-                    let opt = process_trim_area(PathBuf::from(format!("./boot/{}", bc.boot_config))).unwrap();
-                    if let ta = opt {
-                        flash_trim_area(&mut usb, ta).unwrap();
+                    let ta = process_trim_area(PathBuf::from(format!("./boot/{}", bc.boot_config))).unwrap();
+                    flash_trim_area(&mut usb, ta).unwrap();
 
-                        for img in &bc.boot_images {
-                            let path = PathBuf::from(format!("./boot/{}", img));
-                            if img.contains("bootloader") {
-                                process_sins(&mut usb, path, "flash", current_slot).unwrap();
-                            } else {
-                                println!("Skipping non bootloader {} file", path.display());
-                            }
+                    for img in &bc.boot_images {
+                        let path = PathBuf::from(format!("./boot/{}", img));
+                        if img.contains("bootloader") {
+                            process_sins(&mut usb, path, "flash", current_slot).unwrap();
+                        } else {
+                            println!("Skipping non bootloader {} file", path.display());
                         }
                     }
                 });
         },
-        Err(e) => eprintln!("{e}"),
+        Err(e) => error!("{e}"),
     }
 
     exit_flash_mode(&mut usb);
@@ -124,11 +127,13 @@ fn main() {
 fn enter_flash_mode(usb: &mut FastbootDevice) {
     usb.download(&[1u8]).unwrap();
     usb.command_expect("Write-TA:2:10100", FastbootHeader::Okay).unwrap();
+    info!("Entered flashmode");
 }
 
 fn exit_flash_mode(usb: &mut FastbootDevice) {
     usb.download(&[0u8]).unwrap();
     usb.command_expect("Write-TA:2:10100", FastbootHeader::Okay).unwrap();
+    info!("Exited flashmode");
 }
 
 fn set_active_slot(usb: &mut FastbootDevice, slot: Slot) {
@@ -151,7 +156,10 @@ fn get_flash_mode_rs(vid: u16, pid: u16) -> FastbootDevice {
 }
 
 fn print_firmware_history(usb: &mut FastbootDevice) {
-    usb.command_expect("Read-TA:2:2475", FastbootHeader::Data).inspect_err(|e| eprintln!("{e}"));
+    if let Err(e) = usb.command_expect("Read-TA:2:2475", FastbootHeader::Data) {
+        error!("Failed to read firmware history: {e}");
+        return;
+    }
 
     if let Ok(len) = usb.reply.as_hexadecimal() {
         usb.read_reply().expect("Failed to read reply");

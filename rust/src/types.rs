@@ -1,6 +1,5 @@
 use anyhow::{ensure, Context, Result};
 use derive_more::{AsRef, Deref, DerefMut};
-use log::error;
 use nusb::io::{EndpointRead, EndpointWrite};
 use nusb::transfer::{Bulk, In, Out};
 use nusb::{Device, Interface};
@@ -8,9 +7,10 @@ use std::fmt::{Debug, Display, Formatter};
 use std::io::{Read, Write};
 use std::time::Duration;
 use std::{mem, ptr};
+use log::error;
 use tar::Entry;
 
-use crate::utils::{print_hex_ascii, u8_ascii};
+use crate::utils::{trace_formatted_hex, u8_ascii};
 
 const IN: u8 = 0x81;
 const OUT: u8 = 0x01;
@@ -344,7 +344,7 @@ impl FastbootDevice {
     }
 
     pub fn write(&mut self, data: &[u8]) -> Result<usize> {
-        print_hex_ascii("WRITE", data);
+        trace_formatted_hex("WRITE", data);
         self.writer.write_all(data)?;
         self.writer.flush_end()?;
         Ok(data.len())
@@ -358,7 +358,7 @@ impl FastbootDevice {
     /// Strips reply header from self.reply
     pub fn read_reply(&mut self) -> Result<FastbootHeader> {
         let len = self.read()?;
-        print_hex_ascii("READ", self.reply.as_slice());
+        trace_formatted_hex("READ", self.reply.as_slice());
         if len < 4 { return Ok(FastbootHeader::NoHeader); }
 
         let prefix = FastbootHeader::from(&self.reply[0..4]);
