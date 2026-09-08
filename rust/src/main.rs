@@ -155,19 +155,17 @@ fn get_flash_mode_rs(vid: u16, pid: u16) -> FastbootDevice {
     FastbootDevice::new(device, interface)
 }
 
-fn print_firmware_history(usb: &mut FastbootDevice) {
-    if let Err(e) = usb.command_expect("Read-TA:2:2475", FastbootHeader::Data) {
-        error!("Failed to read firmware history: {e}");
-        return;
-    }
+fn print_firmware_history(usb: &mut FastbootDevice) -> anyhow::Result<()> {
+     usb.command_expect("Read-TA:2:2475", FastbootHeader::Data).context("Failed to read firmware history")?;
 
-    if let Ok(len) = usb.reply.as_hexadecimal() {
-        usb.read_reply().expect("Failed to read reply");
+    let len = usb.reply.as_hexadecimal()?;
+    usb.read_reply().expect("Failed to read reply");
 
-        assert_eq!(usb.reply.len(), len as usize);
+    ensure!(usb.reply.len() == len as usize);
 
-        println!("Firmware History ───────────────────────────────────────────────────────────────────────────────────\n{}", usb.reply);
-    }
+    println!("Firmware History ───────────────────────────────────────────────────────────────────────────────────\n{}", usb.reply);
 
-    ()
+    ensure!(usb.read_reply()? == FastbootHeader::Okay);
+
+    Ok(())
 }
