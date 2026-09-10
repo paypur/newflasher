@@ -1,9 +1,10 @@
 use std::fmt::Write;
 use std::ffi::{c_char, CStr};
 use std::fs::{DirEntry, File};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::slice;
-use log::{log_enabled, trace, Level};
+use log::{log_enabled, trace, Level, error, debug};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn file_exist(ptr: *const c_char) -> i32 {
@@ -114,4 +115,35 @@ pub fn is_ta_file(entry: std::io::Result<DirEntry>) -> Option<PathBuf> {
     } else {
         None
     }
+}
+
+pub fn noerase_in_updatexml(search_for: &str) -> bool {
+    let file = match File::open("update.xml") {
+        Ok(f) => f,
+        Err(e) => {
+            error!("{}", e);
+            return false;
+        },
+    };
+
+    let reader = BufReader::new(file);
+
+    for line in reader.lines().into_iter() {
+        match line {
+            Ok(mut str) => {
+                if !str.is_empty() {
+                    trim_rs(&mut str);
+                    if str == format!("<NOERASE>{search_for}</NOERASE>") {
+                        debug!("{}", str);
+                        return true;
+                    }
+                }
+            }
+            Err(e) => {
+                error!("{}", e);
+            }
+        }
+    }
+
+    false
 }

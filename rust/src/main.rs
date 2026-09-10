@@ -1,10 +1,11 @@
 use crate::sins::{process_sins};
 use crate::types::{FastbootDevice, FastbootHeader, Slot};
-use crate::utils::{is_sin_file, is_ta_file, trace_formatted_hex};
+use crate::utils::{is_sin_file, is_ta_file, noerase_in_updatexml, trace_formatted_hex};
 use nusb::MaybeFuture;
 use nusb::{Device, Interface};
 use std::fs;
 use std::path::PathBuf;
+use anyhow::{ensure, Context};
 use log::{debug, error, info, log};
 use crate::ta::{flash_trim_area, process_trim_area};
 use crate::xml_parser::boot_delivery;
@@ -54,10 +55,10 @@ fn main() {
     let current_slot: Slot = usb.getvar_string("getvar:current-slot").unwrap().as_str().into();
     let battery = usb.getvar_u32("getvar:Battery", 0);
 
-    // if battery < 15 {
-    //     println!("Battery level is too low, charge your device before flashing!");
-    //     std::process::exit(1);
-    // }
+    if battery < 15 {
+        println!("Battery level is too low, charge your device before flashing!");
+        std::process::exit(1);
+    }
 
     // TODO: remove this
     std::env::set_current_dir("../../H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/").unwrap();
@@ -78,10 +79,19 @@ fn main() {
         .for_each(|path| process_sins(&mut usb, path, "flash", current_slot).unwrap());
 
     info!("Processing .ta files ───────────────────────────────────────────────────────────────────────────────\n");
-
+    
     fs::read_dir("./").unwrap()
         .filter_map(|entry| is_ta_file(entry))
+        .filter(|path| {
+            let file_name = path.file_name().unwrap().to_string_lossy();
+            let erase = !noerase_in_updatexml(file_name.as_ref());
+            if !erase {
+                debug!("Skipping {file_name}");
+            }
+            !erase
+        })
         .map(|path| process_trim_area(path).unwrap()) // can't recover from this error
+        // TODO: validate all these ta's before flashing
         .for_each(|path| flash_trim_area(&mut usb, path).unwrap());
 
     info!("Processing boot delivery ───────────────────────────────────────────────────────────────────────────\n");
@@ -114,14 +124,14 @@ fn main() {
         Err(e) => error!("{e}"),
     }
 
+    print_firmware_history(&mut usb).unwrap();
+
+    // TODO: whats the point of setting the same slot
+    set_active_slot(&mut usb, current_slot);
     exit_flash_mode(&mut usb);
 
-    // TODO: shouldn't this switch slots??
-    // set_active_slot(&mut usb, current_slot.other());
-
     usb.command_expect("Sync", FastbootHeader::Okay).unwrap();
-
-    print_firmware_history(&mut usb);
+    usb.command_expect("continue", FastbootHeader::Okay).unwrap();
 }
 
 fn enter_flash_mode(usb: &mut FastbootDevice) {

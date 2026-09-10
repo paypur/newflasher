@@ -7,7 +7,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::io::{Read, Write};
 use std::time::Duration;
 use std::{mem, ptr};
-use log::error;
+use log::{debug, error, trace};
 use tar::Entry;
 
 use crate::utils::{trace_formatted_hex, u8_ascii};
@@ -296,16 +296,16 @@ impl FastbootDevice {
         let mut cmd = ByteVec::from("download:");
         cmd.append(&hex_len);
 
-        println!("    {}", cmd);
+        debug!("{cmd}");
         self.write_and_expect_reply(&cmd, FastbootHeader::Data)?;
         ensure!(hex_len == self.reply, format!("Expected {hex_len}, received {}!", self.reply));
 
         // TODO: fix this for real
-        if entry.size() >= 0x10 && entry.size() < 0x200000 {
-            // copy doesn't need to be flushed
-            std::io::copy(entry, &mut self.writer).with_context(|| format!("Failed to download tar entry to device: {:?}", entry.header()))?;
-            println!("WRITE:\nskipped {} bytes", entry.size());
-        } else {
+        // if entry.size() >= 0x10 && entry.size() < 0x200000 {
+        //     // copy doesn't need to be flushed
+        //     std::io::copy(entry, &mut self.writer).with_context(|| format!("Failed to download tar entry to device: {:?}", entry.header()))?;
+        //     trace!("WRITE:\nskipped {} bytes", entry.size());
+        // } else {
             let mut buffer = Vec::<u8>::new();
             let mut adapter = entry.take(0x200000); // 2MiB
 
@@ -318,10 +318,11 @@ impl FastbootDevice {
                 }
 
                 self.writer.write_all(&buffer).with_context(|| "Failed to download tar entry to device".to_string())?;
+                trace!("WRITE:\nskipped {} bytes", buffer.len());
 
                 adapter.set_limit(0x200000);
             }
-        }
+        // }
 
         self.writer.flush()?;
 

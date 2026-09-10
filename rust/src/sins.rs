@@ -18,7 +18,8 @@ pub fn process_sins(
 
     let flash_prefix = validate_prefix(sin_path.as_path())?;
 
-    let flash_both_slots =  flash_prefix == "bootloader" || flash_prefix == "bluetooth" || flash_prefix == "dsp" || flash_prefix == "modem" || flash_prefix == "rdimage";
+    // TODO: this might be wrong for boot delivery
+    let flash_both_slots = /*flash_prefix == "bootloader"*/ flash_prefix == "bluetooth" || flash_prefix == "dsp" || flash_prefix == "modem" || flash_prefix == "rdimage";
 
     process_sins_slot(usb, &sin_path, fb_end_cmd, flash_prefix.as_str(), curr_slot)?;
 
@@ -54,7 +55,7 @@ fn process_sins_slot(
 
     if update_xml_path.is_file() {
         if keep_userdata {
-            file_found_in_updatexml = check_in_updatexml_rs(&update_xml_path, base_fn);
+            file_found_in_updatexml = noerase_in_updatexml(base_fn);
         }
     }
 
@@ -253,35 +254,4 @@ fn transfer_cms(usb: &mut FastbootDevice, entry: &mut Entry<Box<dyn Read>>, entr
     }
 
     Ok(())
-}
-
-fn check_in_updatexml_rs(xml_file: &Path, searchfor: &str) -> bool {
-    let file = match File::open(xml_file) {
-        Ok(f) => f,
-        Err(e) => {
-            error!("{}", e);
-            return false;
-        },
-    };
-
-    let reader = BufReader::new(file);
-
-    for line in reader.lines().into_iter() {
-        match line {
-            Ok(mut str) => {
-                if !str.is_empty() {
-                    trim_rs(&mut str);
-                    if str == format!("<NOERASE>{searchfor}</NOERASE>") {
-                        debug!("{}", str);
-                        return true;
-                    }
-                }
-            }
-            Err(e) => {
-                error!("{}", e);
-            }
-        }
-    }
-
-    false
 }
