@@ -5,6 +5,7 @@ use nusb::MaybeFuture;
 use nusb::{Device, Interface};
 use std::fs;
 use std::path::PathBuf;
+use std::process::exit;
 use anyhow::{ensure, Context};
 use log::{debug, error, info, log};
 use crate::ta::{flash_trim_area, process_trim_area};
@@ -24,6 +25,10 @@ fn main() {
     env_logger::builder()
         .format_timestamp(None)
         .init();
+
+    // TODO: remove this
+    std::env::set_current_dir("../../../xperia/H8314_Customized_US_52.1.A.3.137-R7C")
+        .unwrap();
 
     let mut usb = get_flash_mode_rs(VID, PID);
 
@@ -57,29 +62,26 @@ fn main() {
 
     if battery < 15 {
         println!("Battery level is too low, charge your device before flashing!");
-        std::process::exit(1);
+        exit(1);
     }
-
-    // TODO: remove this
-    std::env::set_current_dir("../../H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/").unwrap();
 
     enter_flash_mode(&mut usb);
 
     info!("Processing ./partition files ───────────────────────────────────────────────────────────────────────\n");
 
-    // TODO: probably should use xml_parser::partition_delivery() instead of this
-    fs::read_dir("./partition/").unwrap()
-        .filter_map(|entry| is_sin_file(entry))
-        .for_each(|path| process_sins(&mut usb, path, "Repartition", current_slot).unwrap());
+    xml_parser::partition_delivery()
+        .expect("failed to read partition_delivery.xml")
+        .iter()
+        .for_each(|path| process_sins(&mut usb, path.as_path(), "Repartition", current_slot).unwrap());
 
     info!("Processing .sin files ──────────────────────────────────────────────────────────────────────────────\n");
 
     fs::read_dir("./").unwrap()
         .filter_map(|entry| is_sin_file(entry))
-        .for_each(|path| process_sins(&mut usb, path, "flash", current_slot).unwrap());
+        .for_each(|path| process_sins(&mut usb, path.as_path(), "flash", current_slot).unwrap());
 
     info!("Processing .ta files ───────────────────────────────────────────────────────────────────────────────\n");
-    
+
     fs::read_dir("./").unwrap()
         .filter_map(|entry| is_ta_file(entry))
         .filter(|path| {
@@ -114,7 +116,7 @@ fn main() {
                     for img in &bc.boot_images {
                         let path = PathBuf::from(format!("./boot/{}", img));
                         if img.contains("bootloader") {
-                            process_sins(&mut usb, path, "flash", current_slot).unwrap();
+                            process_sins(&mut usb, path.as_path(), "flash", current_slot).unwrap();
                         } else {
                             println!("Skipping non bootloader {} file", path.display());
                         }
@@ -131,6 +133,8 @@ fn main() {
     exit_flash_mode(&mut usb);
 
     usb.command_expect("Sync", FastbootHeader::Okay).unwrap();
+
+    // reboot to system
     usb.command_expect("continue", FastbootHeader::Okay).unwrap();
 }
 

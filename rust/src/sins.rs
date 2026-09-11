@@ -11,12 +11,12 @@ use tar::{Archive, Entry, EntryType};
 
 pub fn process_sins(
     usb: &mut FastbootDevice,
-    sin_path: PathBuf,
+    sin_path: &Path,
     fb_end_cmd: &str,
     curr_slot: Slot,
 ) -> anyhow::Result<()> {
 
-    let flash_prefix = validate_prefix(sin_path.as_path())?;
+    let flash_prefix = validate_prefix(sin_path)?;
 
     // TODO: this might be wrong for boot delivery
     let flash_both_slots = /*flash_prefix == "bootloader"*/ flash_prefix == "bluetooth" || flash_prefix == "dsp" || flash_prefix == "modem" || flash_prefix == "rdimage";
