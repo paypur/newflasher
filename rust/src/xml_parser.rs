@@ -2,7 +2,7 @@ use anyhow::Context;
 use regex::regex;
 use std::fs::File;
 use std::io::BufReader;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use xml::attribute::OwnedAttribute;
 use xml::reader::XmlEvent;
 use xml::ParserConfig;
@@ -139,13 +139,12 @@ pub fn boot_delivery(path: impl AsRef<Path>) -> anyhow::Result<BootDelivery> {
     Ok(boot_delivery)
 }
 
-pub fn partition_delivery(path: impl AsRef<Path>) -> anyhow::Result<Vec<String>> {
-    let path = path.as_ref();
-    let partition_delivery_file = File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
+pub fn partition_delivery() -> anyhow::Result<Vec<PathBuf>> {
+    let partition_delivery_file = File::open("partition/partition_delivery.xml").context("Failed to open partition_delivery.xml")?;
     let reader = ParserConfig::default().create_reader(BufReader::new(partition_delivery_file));
 
     let mut element_stack = Vec::<String>::new();
-    let mut partition_files = Vec::<String>::new();
+    let mut partition_paths = Vec::<PathBuf>::new();
 
     for event in reader {
         let event = event?;
@@ -159,7 +158,7 @@ pub fn partition_delivery(path: impl AsRef<Path>) -> anyhow::Result<Vec<String>>
 
                 if in_partition_images && is_file {
                     if let Some(path) = attribute_value(&attributes, PATH_ATTRIBUTE) {
-                        partition_files.push(path);
+                        partition_paths.push(Path::new("partition/").join(path));
                     }
                 }
 
@@ -172,7 +171,7 @@ pub fn partition_delivery(path: impl AsRef<Path>) -> anyhow::Result<Vec<String>>
         }
     }
 
-    Ok(partition_files)
+    Ok(partition_paths)
 }
 
 fn pop_element(element_stack: &mut Vec<String>, ended_name: &str) -> anyhow::Result<()> {
