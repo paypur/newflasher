@@ -61,7 +61,7 @@ fn main() {
     let battery = usb.getvar_u32("getvar:Battery", 0);
 
     if battery < 15 {
-        println!("Battery level is too low, charge your device before flashing!");
+        println!("Battery level is too low. Charge your device before flashing!");
         exit(1);
     }
 

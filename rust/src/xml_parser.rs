@@ -123,13 +123,11 @@ pub fn boot_delivery(path: impl AsRef<Path>) -> anyhow::Result<BootDelivery> {
                 pop_element(&mut element_stack, &name.local_name)?;
 
                 if name.local_name == CONFIGURATION_ELEMENT {
-                    let option = builder.build();
-                    if let Some(bd) = option {
-                        boot_delivery.configurations.push(bd);
-                        builder = BootConfiguration::builder();
-                    } else {
-                        panic!("boot configuration is missing required fields");
-                    }
+                    let bc = builder.build()
+                        .ok_or(anyhow::Error::msg("Boot Configuration is missing required fields!"))?;
+
+                    boot_delivery.configurations.push(bc);
+                    builder = BootConfiguration::builder();
                 }
             }
             _ => {}

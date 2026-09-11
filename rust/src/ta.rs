@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::str::FromStr;
+use log::debug;
 use crate::types::{ByteVec, FastbootDevice};
 
 #[derive(PartialEq, Debug)]
@@ -89,7 +90,7 @@ pub fn process_trim_area(ta_file: PathBuf) -> anyhow::Result<TrimArea> {
                 let bytes = trim.as_bytes();
                 if bytes[0].is_ascii_digit() && bytes[1].is_ascii_digit() {
                     partition = Some(u8::from_str(trim)?);
-                    println!("Partition: {}", partition.unwrap());
+                    debug!("Partition: {}", partition.unwrap());
                     state = TAParseState::UnitData;
                 }
             },
@@ -104,7 +105,7 @@ pub fn process_trim_area(ta_file: PathBuf) -> anyhow::Result<TrimArea> {
                 let blacklisted = is_blacklisted(unit);
 
                 if !blacklisted {
-                    println!(" - Unit: 0x{unit_hex} ({unit})");
+                    debug!("- Unit: 0x{unit_hex} ({unit})");
                 }
 
                 let (size, offset) = {
@@ -122,12 +123,12 @@ pub fn process_trim_area(ta_file: PathBuf) -> anyhow::Result<TrimArea> {
                 };
 
                 if size == 0 {
-                    println!(" - Found specific unit which doesn't contain data");
+                    debug!("- Found specific unit which doesn't contain data");
                     continue;
                 }
 
                 if !blacklisted {
-                    println!("   Unit size: 0x{size:x}");
+                    debug!("  Unit size: 0x{size:x}");
                 }
 
                 builder.unit = Some(unit);
@@ -150,7 +151,7 @@ pub fn process_trim_area(ta_file: PathBuf) -> anyhow::Result<TrimArea> {
                 if builder.size.context("Parsing reaching ExtraData without matching unit size!")? == builder.data.len() {
                     let unit = builder.unit.unwrap();
                     if is_blacklisted(unit) {
-                        println!(" - Skipping unit 0x{unit:x}");
+                        debug!("- Skipping unit 0x{unit:x}");
                         builder.clear();
                     } else {
                         vec.push(builder.build());
@@ -183,12 +184,9 @@ fn parse_hex_string(hex: &str) -> anyhow::Result<ByteVec> {
 pub fn flash_trim_area(usb: &mut FastbootDevice, ta: TrimArea) -> anyhow::Result<()> {
     for unit in &ta.boot_config_units {
         usb.download(unit.data.as_slice())?;
-        println!("    OKAY.");
 
         let cmd = format!("Write-TA:{}:{}", ta.partition, unit.unit);
-        println!("    {}", cmd);
         usb.command(cmd.as_str())?;
-        println!("    OKAY.");
     }
 
     Ok(())

@@ -328,7 +328,6 @@ impl FastbootDevice {
 
         let header = self.read_reply()?;
         ensure!(header == FastbootHeader::Okay, format!("Expected OKAY header, received {header:?}!"));
-        println!("    OKAY");
 
         Ok(())
     }
