@@ -56,7 +56,6 @@ impl Display for Slot {
 }
 
 #[derive(AsRef, Deref, DerefMut, Default, PartialEq)]
-#[repr(C)]
 pub struct ByteVec {
     data: Vec<u8>
 }
@@ -67,10 +66,6 @@ impl ByteVec {
     }
 
     pub fn append(&mut self, vec: &Self) {
-        self.data.extend(vec.as_ref());
-    }
-
-    pub fn extend_vec(&mut self, vec: Self) {
         self.data.extend(vec.as_ref());
     }
 
