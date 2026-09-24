@@ -80,7 +80,7 @@ fn process_sins_slot(
         format!("Processing {prefix}")
     };
 
-    let progress = ProgressBar::new(parts as u64, text.as_str());
+    let progress = ProgressBar::new(parts as u64, text);
 
     for (i, mut entry) in open_sin_archive(&sin_path)?.entries()?
         .into_iter()
@@ -223,20 +223,20 @@ fn transfer_cms(usb: &mut FastbootDevice, entry: &mut Entry<Box<dyn Read>>, entr
     let mut is_2021_device: bool = false;
 
     let hex_len = ByteVec::from_len(entry.size() as usize);
-    info!("- Uploading signature: {}", entry_name);
+    info!("Uploading signature {entry_name}");
 
     let cstr = CStr::from_bytes_until_nul(&entry.header().as_ustar().unwrap().name)?.to_string_lossy();
     ensure!(cstr == entry_name, "Invalid cms string!");
 
     let cmd = format!("signature:{hex_len}");
-    info!("    {cmd}");
+    debug!("  {cmd}");
 
     if usb.write_and_read_reply(cmd.as_bytes()).context("Error writing signature command!")? == FastbootHeader::Fail {
         is_2021_device = true;
         info!("device from 2021 and up?");
 
         let cmd = format!("download:{hex_len}");
-        info!("    {cmd}");
+        debug!("  {cmd}");
 
         usb.write_and_read_reply(cmd.as_bytes()).context("Error writing signature command!")?;
     }
@@ -255,11 +255,11 @@ fn transfer_cms(usb: &mut FastbootDevice, entry: &mut Entry<Box<dyn Read>>, entr
     let header = usb.read_reply()?;
     ensure!(header == FastbootHeader::Okay, format!("Invalid header! Expected OKAY, received: {header:?}"));
 
-    info!("    OKAY");
+    debug!("  OKAY");
 
     if is_2021_device {
         usb.write_and_expect_reply(b"signature", FastbootHeader::Okay)?;
-        info!("    OKAY");
+        debug!("  OKAY");
     }
 
     Ok(())

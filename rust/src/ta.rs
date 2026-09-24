@@ -1,24 +1,16 @@
-use anyhow::{anyhow, ensure, Context};
+use crate::types::{ByteVec, FastbootDevice};
+use anyhow::{Context, anyhow, ensure};
+use log::{debug, info};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::str::FromStr;
-use log::{debug, info};
-use crate::types::{ByteVec, FastbootDevice};
 
 #[derive(PartialEq, Debug)]
-pub struct TrimArea {
-    pub partition: u8,
-    pub boot_config_units: Vec<BootConfigUnit>,
-}
-
-impl TrimArea {
-    pub fn new(partition: u8, boot_config_units: Vec<BootConfigUnit>) -> Self {
-        Self {
-            partition,
-            boot_config_units
-        }
-    }
+enum TAParseState {
+    Partition,
+    UnitData,
+    ExtraData
 }
 
 #[derive(PartialEq, Debug)]
@@ -34,9 +26,143 @@ struct BootConfigUnitBuilder {
     data: ByteVec
 }
 
+#[derive(PartialEq, Debug)]
+pub struct TrimArea {
+    pub name: String,
+    pub partition: u8,
+    pub boot_config_units: Vec<BootConfigUnit>,
+}
+
+impl TrimArea {
+    fn new(name: &str, partition: u8, boot_config_units: Vec<BootConfigUnit>) -> Self {
+        Self {
+            name: name.to_owned(),
+            partition,
+            boot_config_units
+        }
+    }
+
+    pub fn try_from_file(path: PathBuf) -> anyhow::Result<TrimArea> {
+        info!("Processing {}", path.display());
+
+        let mut partition = None;
+        let mut vec = Vec::<BootConfigUnit>::new();
+
+        let mut builder = BootConfigUnitBuilder::default();
+        let mut state = TAParseState::Partition;
+
+        let file = File::open(&path).context("Unable to open file")?;
+        let reader = BufReader::new(file);
+
+        for res in reader.lines() {
+            let line = res?;
+            let trim = line.trim();
+
+            if trim.is_empty() || trim.starts_with("//") {
+                continue;
+            }
+
+            match state {
+                TAParseState::Partition => {
+                    if trim.len() != 2 {
+                        return Err(anyhow!("Invalid partition!"));
+                    }
+
+                    let bytes = trim.as_bytes();
+                    if bytes[0].is_ascii_digit() && bytes[1].is_ascii_digit() {
+                        partition = Some(u8::from_str(trim)?);
+                        debug!("Partition: {}", partition.unwrap());
+                        state = TAParseState::UnitData;
+                    }
+                },
+                TAParseState::UnitData => {
+                    if trim.len() < 8 {
+                        return Err(anyhow!("Invalid unit!"));
+                    }
+
+                    let unit_hex: ByteVec = trim[0..8].as_bytes().into();
+                    let unit = unit_hex.as_hexadecimal()? as usize;
+
+                    let blacklisted = is_blacklisted(unit);
+
+                    if !blacklisted {
+                        debug!("- Unit: 0x{unit_hex} ({unit})");
+                    }
+
+                    let (size, offset) = {
+                        /*
+                         * in case of 32 bit unit size!
+                         * unit(8) + space(1) + unit size(8) + space(1)
+                         */
+                        let (size_str, offset) = if trim.len() >= 18 && trim.chars().nth(8).unwrap() == ' ' && trim.chars().nth(17).unwrap() == ' ' {
+                            (&trim[9..17], 18)
+                        } else {
+                            (&trim[9..13], 14)
+                        };
+                        let s = usize::from_str_radix(size_str, 16).with_context(|| format!("Error parsing unit size: {size_str}"))?;
+                        (s, offset)
+                    };
+
+                    if size == 0 {
+                        debug!("- Found specific unit which doesn't contain data");
+                        continue;
+                    }
+
+                    if !blacklisted {
+                        debug!("  Unit size: 0x{size:x}");
+                    }
+
+                    builder.unit = Some(unit);
+                    builder.size = Some(size);
+
+                    builder.append(parse_hex_string(&line[offset..])?);
+
+                    if size == builder.data.len() {
+                        vec.push(builder.build());
+                        builder = BootConfigUnitBuilder::default();
+                    } else if size > builder.data.len() {
+                        state = TAParseState::ExtraData
+                    } else {
+                        return Err(anyhow!("Corrupted unit data!"));
+                    }
+                },
+                TAParseState::ExtraData => {
+                    builder.append(parse_hex_string(trim)?);
+
+                    if builder.size.context("Parsing reaching ExtraData without matching unit size!")? == builder.data.len() {
+                        let unit = builder.unit.unwrap();
+                        if is_blacklisted(unit) {
+                            debug!("- Skipping unit 0x{unit:x}");
+                            builder.clear();
+                        } else {
+                            vec.push(builder.build());
+                            builder = BootConfigUnitBuilder::default();
+                        }
+
+                        state = TAParseState::UnitData
+                    };
+                }
+            }
+        };
+
+        Ok(TrimArea::new(path.file_name().unwrap().to_str().unwrap(),partition.context("Partition not found!")?, vec))
+    }
+
+    pub fn flash(self, usb: &mut FastbootDevice) -> anyhow::Result<()> {
+        for unit in &self.boot_config_units {
+            usb.download(unit.data.as_slice())?;
+
+            let cmd = format!("Write-TA:{}:{}", self.partition, unit.unit);
+            usb.command(cmd.as_str())?;
+        }
+
+        Ok(())
+    }
+}
+
 impl BootConfigUnitBuilder {
     fn append(&mut self, data: ByteVec) {
-        self.data.append(&data) ;
+        self.data.append(&data);
     }
 
     fn build(self) -> BootConfigUnit {
@@ -54,119 +180,6 @@ impl BootConfigUnitBuilder {
 }
 
 
-#[derive(PartialEq, Debug)]
-enum TAParseState {
-    Partition,
-    UnitData,
-    ExtraData
-}
-
-pub fn process_trim_area(ta_file: PathBuf) -> anyhow::Result<TrimArea> {
-    info!("Processing {}", ta_file.display());
-
-    let mut partition = None;
-    let mut vec = Vec::<BootConfigUnit>::new();
-
-    let mut builder = BootConfigUnitBuilder::default();
-    let mut state = TAParseState::Partition;
-
-    let file = File::open(ta_file).context("Unable to open file")?;
-    let reader = BufReader::new(file);
-
-    for res in reader.lines() {
-        let line = res?;
-        let trim =  line.trim();
-
-        if trim.is_empty() || trim.starts_with("//") {
-            continue;
-        }
-
-        match state {
-            TAParseState::Partition => {
-                if trim.len() != 2 {
-                    return Err(anyhow!("Invalid partition!"));
-                }
-
-                let bytes = trim.as_bytes();
-                if bytes[0].is_ascii_digit() && bytes[1].is_ascii_digit() {
-                    partition = Some(u8::from_str(trim)?);
-                    debug!("Partition: {}", partition.unwrap());
-                    state = TAParseState::UnitData;
-                }
-            },
-            TAParseState::UnitData => {
-                if trim.len() < 8 {
-                    return Err(anyhow!("Invalid unit!"));
-                }
-
-                let unit_hex: ByteVec = trim[0..8].as_bytes().into();
-                let unit = unit_hex.as_hexadecimal()? as usize;
-
-                let blacklisted = is_blacklisted(unit);
-
-                if !blacklisted {
-                    debug!("- Unit: 0x{unit_hex} ({unit})");
-                }
-
-                let (size, offset) = {
-                    /*
-                     * in case of 32 bit unit size!
-                     * unit(8) + space(1) + unit size(8) + space(1)
-                     */
-                    let (size_str, offset) = if trim.len() >= 18 && trim.chars().nth(8).unwrap() == ' ' && trim.chars().nth(17).unwrap() == ' ' {
-                        (&trim[9..17], 18)
-                    } else {
-                        (&trim[9..13], 14)
-                    };
-                    let s = usize::from_str_radix(size_str, 16).with_context(|| format!("Error parsing unit size: {size_str}"))?;
-                    (s, offset)
-                };
-
-                if size == 0 {
-                    debug!("- Found specific unit which doesn't contain data");
-                    continue;
-                }
-
-                if !blacklisted {
-                    debug!("  Unit size: 0x{size:x}");
-                }
-
-                builder.unit = Some(unit);
-                builder.size = Some(size);
-
-                builder.append(parse_hex_string(&line[offset..])?);
-
-                if size == builder.data.len() {
-                    vec.push(builder.build());
-                    builder = BootConfigUnitBuilder::default();
-                } else if size > builder.data.len() {
-                    state = TAParseState::ExtraData
-                } else {
-                    return Err(anyhow!("Corrupted unit data!"));
-                }
-            },
-            TAParseState::ExtraData => {
-                builder.append(parse_hex_string(trim)?);
-
-                if builder.size.context("Parsing reaching ExtraData without matching unit size!")? == builder.data.len() {
-                    let unit = builder.unit.unwrap();
-                    if is_blacklisted(unit) {
-                        debug!("- Skipping unit 0x{unit:x}");
-                        builder.clear();
-                    } else {
-                        vec.push(builder.build());
-                        builder = BootConfigUnitBuilder::default();
-                    }
-
-                    state = TAParseState::UnitData
-                };
-            }
-        }
-    };
-
-    Ok(TrimArea::new(partition.context("Partition not found!")?, vec))
-}
-
 fn parse_hex_string(hex: &str) -> anyhow::Result<ByteVec> {
     hex.as_bytes()
        .split(|&b| b == b' ')
@@ -177,17 +190,6 @@ fn parse_hex_string(hex: &str) -> anyhow::Result<ByteVec> {
        })
        .collect::<anyhow::Result<ByteVec>>()
        .with_context(|| format!("Error parsing unit data: {hex}"))
-}
-
-pub fn flash_trim_area(usb: &mut FastbootDevice, ta: TrimArea) -> anyhow::Result<()> {
-    for unit in &ta.boot_config_units {
-        usb.download(unit.data.as_slice())?;
-
-        let cmd = format!("Write-TA:{}:{}", ta.partition, unit.unit);
-        usb.command(cmd.as_str())?;
-    }
-
-    Ok(())
 }
 
 pub fn is_blacklisted(unit: usize) -> bool {

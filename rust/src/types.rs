@@ -409,15 +409,15 @@ pub struct ProgressBar {
 }
 
 impl ProgressBar {
-    pub fn new(parts: u64, text: &str) -> Self {
+    pub fn new(parts: u64, text: impl Into<String>) -> Self {
         let template = format!("{{prefix:<{PREFIX_LEN}}} {{elapsed:>3}} [{{bar:40.cyan/blue}}] {{percent:>3}}% {{msg}}");
 
-        let mut text_owned = text.to_owned();
-        text_owned.truncate(PREFIX_LEN);
+        let mut prefix = text.into();
+        prefix.truncate(PREFIX_LEN);
 
         Self { bar: indicatif::ProgressBar::new(parts)
             .with_style(ProgressStyle::with_template(template.as_str()).unwrap().progress_chars("#*-"))
-            .with_prefix(text_owned)
+            .with_prefix(prefix)
             .with_finish(ProgressFinish::AbandonWithMessage(Cow::Owned(console::style("FAIL").red().to_string())))
         }
     }
