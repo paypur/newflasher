@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::str::FromStr;
-use log::debug;
+use log::{debug, info};
 use crate::types::{ByteVec, FastbootDevice};
 
 #[derive(PartialEq, Debug)]
@@ -62,7 +62,7 @@ enum TAParseState {
 }
 
 pub fn process_trim_area(ta_file: PathBuf) -> anyhow::Result<TrimArea> {
-    println!("Processing {}", ta_file.display());
+    info!("Processing {}", ta_file.display());
 
     let mut partition = None;
     let mut vec = Vec::<BootConfigUnit>::new();
@@ -163,8 +163,6 @@ pub fn process_trim_area(ta_file: PathBuf) -> anyhow::Result<TrimArea> {
             }
         }
     };
-
-    println!();
 
     Ok(TrimArea::new(partition.context("Partition not found!")?, vec))
 }

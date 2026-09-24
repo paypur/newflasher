@@ -1,11 +1,11 @@
-use crate::types::{ByteVec, FastbootDevice, FastbootHeader, Slot};
+use crate::types::{ByteVec, FastbootDevice, FastbootHeader, ProgressBar, Slot};
 use crate::utils::*;
 use anyhow::{ensure, Context};
 use flate2::read::GzDecoder;
 use std::ffi::CStr;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Read, Seek};
-use std::path::{Path, PathBuf};
+use std::io::{Read, Seek, Write};
+use std::path::{Path};
 use log::{debug, error, info};
 use tar::{Archive, Entry, EntryType};
 
@@ -13,19 +13,18 @@ pub fn process_sins(
     usb: &mut FastbootDevice,
     sin_path: &Path,
     fb_end_cmd: &str,
-    curr_slot: Slot,
+    target_slot: Slot,
 ) -> anyhow::Result<()> {
-
     let flash_prefix = validate_prefix(sin_path)?;
 
     // TODO: this might be wrong for boot delivery
     let flash_both_slots = /*flash_prefix == "bootloader"*/ flash_prefix == "bluetooth" || flash_prefix == "dsp" || flash_prefix == "modem" || flash_prefix == "rdimage";
 
-    process_sins_slot(usb, &sin_path, fb_end_cmd, flash_prefix.as_str(), curr_slot)?;
+    process_sins_slot(usb, &sin_path, fb_end_cmd, flash_prefix.as_str(), target_slot, flash_both_slots)?;
 
     // TODO: try to avoid reading the entry twice
     if flash_both_slots {
-        process_sins_slot(usb, &sin_path, fb_end_cmd, flash_prefix.as_str(), curr_slot.other())?;
+        process_sins_slot(usb, &sin_path, fb_end_cmd, flash_prefix.as_str(), target_slot.other(), flash_both_slots)?;
     }
 
     Ok(())
@@ -37,6 +36,7 @@ fn process_sins_slot(
     fb_end_cmd: &str,
     flash_prefix: &str,
     target_slot: Slot,
+    flash_both_slots: bool,
 ) -> anyhow::Result<()> {
     if !fb_end_cmd.is_ascii() {
         panic!();
@@ -45,26 +45,14 @@ fn process_sins_slot(
     // TODO: move to main
     let mut keep_userdata: bool = true;
 
-    let working_path = std::env::current_dir()?;
+    let file_name = sin_path.file_name().unwrap().to_string_lossy();
 
-    let mut file_found_in_updatexml: bool = false;
-
-    let base_fn = sin_path.file_name().unwrap().to_str().unwrap();
-
-    let update_xml_path = working_path.join("update.xml");
-
-    if update_xml_path.is_file() {
-        if keep_userdata {
-            file_found_in_updatexml = noerase_in_updatexml(base_fn);
-        }
-    }
-
-    if file_found_in_updatexml {
-        info!("Skipping {}", base_fn);
+    if keep_userdata && noerase_in_updatexml(file_name.as_ref()) {
+        info!("Skipping {}", file_name);
         return Ok(());
     }
 
-    info!("Processing {}", base_fn);
+    // info!("Processing {}", base_fn);
 
     let has_slot = fb_end_cmd == "flash" && {
         let cmd = format!("getvar:has-slot:{flash_prefix}");
@@ -77,6 +65,23 @@ fn process_sins_slot(
         }
     };
 
+    let prefix = match file_name.split_once('_') {
+        Some((first, _)) => first,
+        None => file_name.as_ref(),
+    };
+
+    let parts = open_sin_archive(&sin_path)?
+        .entries()?
+        .count();
+
+    let text = if flash_both_slots {
+        format!("Processing {prefix} ({target_slot})")
+    } else {
+        format!("Processing {prefix}")
+    };
+
+    let progress = ProgressBar::new(parts as u64, text.as_str());
+
     for (i, mut entry) in open_sin_archive(&sin_path)?.entries()?
         .into_iter()
         .flatten()
@@ -84,10 +89,10 @@ fn process_sins_slot(
         .enumerate() {
         let entry_name = CStr::from_bytes_until_nul(&entry.header().as_ustar().unwrap().name)?.to_string_lossy().to_string();
         if i == 0 {
-            transfer_cms(usb, &mut entry, &entry_name)?;
+            transfer_cms(usb, &mut entry, &entry_name).with_context(|| format!("Failed to transfer '{entry_name}' cms"))?;
         } else {
             info!("Uploading sparse chunk {}", entry_name);
-            usb.download_tar_entry(&mut entry)?;
+            usb.download_tar_entry(&mut entry).with_context(|| format!("Failed to transfer '{entry_name}' chunk {i}"))?;
 
             // erase partition
             if i == 1 && fb_end_cmd == "flash" {
@@ -126,17 +131,20 @@ fn process_sins_slot(
                     flash_entry(usb, fb_end_cmd, &flash_prefix, Some(target_slot.other()))?;
                 } else*/
                 if has_slot {
-                    let target_slot = match entry_name.contains("_other") {
+                    let slot = match entry_name.contains("_other") {
                         true => target_slot.other(),
                         false => target_slot
                     };
-                    flash_entry(usb, fb_end_cmd, &flash_prefix, Some(target_slot))?;
+                    flash_entry(usb, fb_end_cmd, &flash_prefix, Some(slot)).with_context(|| format!("Chunk {i}"))?;
                 } else {
-                    flash_entry(usb, fb_end_cmd, &flash_prefix, None)?;
+                    flash_entry(usb, fb_end_cmd, &flash_prefix, None).with_context(|| format!("Chunk {i}"))?;
                 }
             }
         }
+        progress.set_position(i as u64);
     }
+
+    progress.okay();
 
     Ok(())
 }
@@ -150,7 +158,8 @@ fn flash_entry(usb: &mut FastbootDevice, fb_end_cmd: &str, flash_prefix: &str, t
     };
 
     debug!("    {command}");
-    usb.write_and_expect_reply(command.as_bytes(), FastbootHeader::Okay)?;
+    usb.write_and_expect_reply(command.as_bytes(), FastbootHeader::Okay)
+        .with_context(|| format!("Failed to flash '{flash_prefix}' chunk"))?;
     debug!("    OKAY");
 
     Ok(())

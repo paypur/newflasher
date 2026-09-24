@@ -7,10 +7,12 @@ use std::fmt::{Debug, Display, Formatter};
 use std::io::{Read, Write};
 use std::time::Duration;
 use std::{mem, ptr};
+use std::borrow::Cow;
+use indicatif::{ProgressFinish, ProgressStyle};
 use log::{debug, error, trace};
 use tar::Entry;
 
-use crate::utils::{trace_formatted_hex, u8_ascii};
+use crate::utils::{trace_formatted_hex};
 
 const IN: u8 = 0x81;
 const OUT: u8 = 0x01;
@@ -397,5 +399,38 @@ impl From<*mut FastbootDeviceFFI> for FastbootDevice {
             let dev_ffi = ptr::read(dev_ffi_ptr);
             Self { device: dev_ffi._device, interface: dev_ffi._interface, reader: dev_ffi._reader, writer: dev_ffi._writer, reply: dev_ffi.reply.into() }
         }
+    }
+}
+
+const PREFIX_LEN: usize = 40;
+
+pub struct ProgressBar {
+    bar: indicatif::ProgressBar,
+}
+
+impl ProgressBar {
+    pub fn new(parts: u64, text: &str) -> Self {
+        let template = format!("{{prefix:<{PREFIX_LEN}}} {{elapsed:>3}} [{{bar:40.cyan/blue}}] {{percent:>3}}% {{msg}}");
+
+        let mut text_owned = text.to_owned();
+        text_owned.truncate(PREFIX_LEN);
+
+        Self { bar: indicatif::ProgressBar::new(parts)
+            .with_style(ProgressStyle::with_template(template.as_str()).unwrap().progress_chars("#*-"))
+            .with_prefix(text_owned)
+            .with_finish(ProgressFinish::AbandonWithMessage(Cow::Owned(console::style("FAIL").red().to_string())))
+        }
+    }
+
+    pub fn set_position(&self, pos: u64) {
+        self.bar.set_position(pos);
+    }
+
+    pub fn okay(self) {
+        self.bar.finish_with_message(console::style("OKAY").green().to_string())
+    }
+
+    pub fn fail(self) {
+        self.bar.abandon();
     }
 }
