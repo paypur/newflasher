@@ -1,13 +1,13 @@
 use crate::sins::{process_sins};
-use crate::types::{FastbootDevice, FastbootHeader, Slot};
-use crate::utils::{is_sin_file, is_ta_file, noerase_in_updatexml, trace_formatted_hex};
+use crate::types::{FastbootDevice, FastbootHeader, ProgressBar, Slot};
+use crate::utils::{is_sin_file, is_ta_file, noerase_in_updatexml};
 use nusb::MaybeFuture;
 use nusb::{Device, Interface};
 use std::fs;
 use std::path::PathBuf;
 use std::process::exit;
 use anyhow::{ensure, Context};
-use log::{debug, error, info, log};
+use log::{debug, error, info};
 use crate::ta::{flash_trim_area, process_trim_area};
 use crate::xml_parser::boot_delivery;
 
@@ -27,14 +27,27 @@ fn main() {
         .init();
 
     // TODO: remove this
+    // std::env::set_current_dir("../../../xperia/H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C")
     std::env::set_current_dir("../../../xperia/H8314_Customized_US_52.1.A.3.137-R7C")
-        .unwrap();
+      .unwrap();
 
     let mut usb = get_flash_mode_rs(VID, PID);
 
     /* fastboot variables */
     let max_download_size = usb.getvar_u32("getvar:max-download-size", 0);
     let product = usb.getvar_string("getvar:product").unwrap();
+
+    // basic checks that these files are for the correct device
+    if !std::env::current_dir()
+        .unwrap()
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .contains(product.as_str()) {
+        println!("Specified folder is probably not for this device!");
+        exit(-1);
+    }
+
     let version = usb.getvar_string("getvar:version").unwrap();
     let version_bootloader = usb.getvar_string("getvar:version-bootloader").unwrap();
     let serial_number = usb.getvar_string("getvar:serialno").unwrap();
@@ -61,26 +74,29 @@ fn main() {
     let battery = usb.getvar_u32("getvar:Battery", 0);
 
     if battery < 15 {
-        println!("Battery level is too low. Charge your device before flashing!");
-        exit(1);
+      println!("Battery level is too low. Charge your device before flashing!");
+      exit(1);
     }
 
     enter_flash_mode(&mut usb);
 
-    info!("Processing ./partition files ───────────────────────────────────────────────────────────────────────\n");
+    println!("{:─<97}", "Processing ./partition files ");
 
     xml_parser::partition_delivery()
-        .expect("failed to read partition_delivery.xml")
-        .iter()
-        .for_each(|path| process_sins(&mut usb, path.as_path(), "Repartition", current_slot).unwrap());
+      .expect("failed to read partition_delivery.xml")
+      .iter()
+      .for_each(|path| process_sins(&mut usb, path.as_path(), "Repartition", current_slot.other()).unwrap());
 
-    info!("Processing .sin files ──────────────────────────────────────────────────────────────────────────────\n");
+    println!("{:─<97}", "Processing .sin files ");
 
     fs::read_dir("./").unwrap()
         .filter_map(|entry| is_sin_file(entry))
-        .for_each(|path| process_sins(&mut usb, path.as_path(), "flash", current_slot).unwrap());
+        .for_each(|path|
+             process_sins(&mut usb, path.as_path(), "flash", current_slot.other())
+                .with_context(|| format!("Failed to flash {}", path.display())).unwrap()
+        );
 
-    info!("Processing .ta files ───────────────────────────────────────────────────────────────────────────────\n");
+    println!("{:─<97}", "Processing .ta files ");
 
     fs::read_dir("./").unwrap()
         .filter_map(|entry| is_ta_file(entry))
@@ -92,11 +108,17 @@ fn main() {
             }
             !erase
         })
-        .map(|path| process_trim_area(path).unwrap()) // can't recover from this error
         // TODO: validate all these ta's before flashing
-        .for_each(|path| flash_trim_area(&mut usb, path).unwrap());
+        .for_each(|path| {
+            let progress = ProgressBar::new(2, path.file_name().unwrap().to_string_lossy().as_ref());
+            let ta = process_trim_area(path).unwrap();
+            progress.set_position(1);
+            flash_trim_area(&mut usb, ta).unwrap();
+            progress.set_position(2);
+            progress.okay();
+        });
 
-    info!("Processing boot delivery ───────────────────────────────────────────────────────────────────────────\n");
+    println!("{:─<97}", "Processing boot delivery ");
 
     match boot_delivery(PathBuf::from("./boot/boot_delivery.xml")) {
         Ok(bd) => {
@@ -118,7 +140,7 @@ fn main() {
                         if img.contains("bootloader") {
                             process_sins(&mut usb, path.as_path(), "flash", current_slot).unwrap();
                         } else {
-                            println!("Skipping non bootloader {} file", path.display());
+                          println!("Skipping non bootloader {} file", path.display());
                         }
                     }
                 });
@@ -126,10 +148,11 @@ fn main() {
         Err(e) => error!("{e}"),
     }
 
+    panic!("Skipped!");
+
     print_firmware_history(&mut usb).unwrap();
 
-    // TODO: whats the point of setting the same slot
-    set_active_slot(&mut usb, current_slot);
+    set_active_slot(&mut usb, current_slot.other());
     exit_flash_mode(&mut usb);
 
     usb.command_expect("Sync", FastbootHeader::Okay).unwrap();
