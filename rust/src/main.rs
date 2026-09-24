@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::process::exit;
 use anyhow::{ensure, Context};
 use log::{debug, error, info};
-use crate::ta::{flash_trim_area, process_trim_area};
+use crate::ta::{TrimArea};
 use crate::xml_parser::boot_delivery;
 
 pub mod tests;
@@ -98,25 +98,20 @@ fn main() {
 
     println!("{:─<97}", "Processing .ta files ");
 
-    fs::read_dir("./").unwrap()
+    // validate all these ta's before flashing
+    let tas = fs::read_dir("./").unwrap()
         .filter_map(|entry| is_ta_file(entry))
-        .filter(|path| {
-            let file_name = path.file_name().unwrap().to_string_lossy();
-            let erase = !noerase_in_updatexml(file_name.as_ref());
-            if !erase {
-                debug!("Skipping {file_name}");
-            }
-            !erase
-        })
-        // TODO: validate all these ta's before flashing
-        .for_each(|path| {
-            let progress = ProgressBar::new(2, path.file_name().unwrap().to_string_lossy().as_ref());
-            let ta = process_trim_area(path).unwrap();
-            progress.set_position(1);
-            flash_trim_area(&mut usb, ta).unwrap();
-            progress.set_position(2);
-            progress.okay();
-        });
+        .filter(|path| !noerase_in_updatexml(path.file_name().unwrap().to_str().unwrap()))
+        .map(|path| TrimArea::try_from_file(path))
+        .collect::<Result<Vec<_>, _>>()
+        .expect("All .ta files could not be successfully parsed!");
+
+    for ta in tas {
+        let progress = ProgressBar::new(0, format!("Processing {}", ta.name));
+        ta.flash(&mut usb).unwrap();
+        progress.set_position(1);
+        progress.okay();
+    }
 
     println!("{:─<97}", "Processing boot delivery ");
 
@@ -132,23 +127,21 @@ fn main() {
             bd.configurations.iter()
                 .filter(|bc| bc.platform_id == modified && root_key_hash.contains(bc.plf_root_hash.as_str()))
                 .for_each(|bc| {
-                    let ta = process_trim_area(PathBuf::from(format!("./boot/{}", bc.boot_config))).unwrap();
-                    flash_trim_area(&mut usb, ta).unwrap();
+                    let ta = TrimArea::try_from_file(PathBuf::from("./boot").join(&bc.boot_config));
+                    ta.unwrap().flash(&mut usb).unwrap();
 
                     for img in &bc.boot_images {
-                        let path = PathBuf::from(format!("./boot/{}", img));
+                        let path = PathBuf::from(PathBuf::from("./boot").join(img));
                         if img.contains("bootloader") {
                             process_sins(&mut usb, path.as_path(), "flash", current_slot).unwrap();
                         } else {
-                          println!("Skipping non bootloader {} file", path.display());
+                            println!("Skipping non bootloader {} file", path.display());
                         }
                     }
                 });
         },
         Err(e) => error!("{e}"),
     }
-
-    panic!("Skipped!");
 
     print_firmware_history(&mut usb).unwrap();
 
