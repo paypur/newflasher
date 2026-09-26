@@ -1,21 +1,22 @@
-use anyhow::Context;
-use regex::regex;
+use anyhow::{anyhow, Context, ensure};
+use regex::{Regex};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
+use log::{debug, trace};
 use xml::attribute::OwnedAttribute;
 use xml::reader::XmlEvent;
 use xml::ParserConfig;
 
 #[derive(Debug, Default)]
 pub struct BootDelivery {
-    pub space_id: Option<String>,
-    pub configurations: Vec<BootConfiguration>,
+    pub space_id: String,
+    pub config: BootConfiguration,
 }
 #[derive(Debug, Default)]
 pub struct BootConfiguration {
-    pub name: String,
-    pub platform_id: String,
+    pub _name: String,
+    pub _platform_id: Option<String>,
     pub plf_root_hash: String,
     pub hw_config_rev: String,
     pub boot_config: String,
@@ -30,9 +31,9 @@ impl BootConfiguration {
 
 #[derive(Debug, Default)]
 struct BootConfigurationBuilder {
-    name: Option<String>,
-    platform_id: String,
-    plf_root_hash: String,
+    name: String,
+    platform_id: Option<String>,
+    plf_root_hash: Option<String>,
     hw_config_rev: Option<String>,
     boot_config: Option<String>,
     boot_images: Vec<String>,
@@ -41,9 +42,9 @@ struct BootConfigurationBuilder {
 impl BootConfigurationBuilder {
     pub fn build(self) -> Option<BootConfiguration> {
         Some(BootConfiguration {
-            name: self.name?,
-            platform_id: self.platform_id,
-            plf_root_hash: self.plf_root_hash,
+            _name: self.name,
+            _platform_id: self.platform_id,
+            plf_root_hash: self.plf_root_hash?,
             hw_config_rev: self.hw_config_rev?,
             boot_config: self.boot_config?,
             boot_images: self.boot_images,
@@ -66,36 +67,55 @@ const VALUE_ATTRIBUTE: &str = "VALUE";
 const REVISION_ATTRIBUTE: &str = "REVISION";
 const PATH_ATTRIBUTE: &str = "PATH";
 
-pub fn boot_delivery(path: impl AsRef<Path>) -> anyhow::Result<BootDelivery> {
-    let path = path.as_ref();
-    let boot_delivery_file = File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
+pub fn boot_delivery(root_key_hash: &str) -> anyhow::Result<BootDelivery> {
+    let path = PathBuf::from("boot/boot_delivery.xml");
+    let boot_delivery_file = File::open(&path).with_context(|| format!("failed to open {}", path.display()))?;
     let reader = ParserConfig::default().create_reader(BufReader::new(boot_delivery_file));
 
     let mut element_stack = Vec::<String>::new();
     let mut boot_delivery = BootDelivery::default();
     let mut builder = BootConfiguration::builder();
 
+    let mut skip = false;
+
     for event in reader {
         let event = event?;
         match event {
             XmlEvent::StartElement { name, attributes: attrs, .. } => {
-                if name.local_name == BOOT_DELIVERY_ELEMENT && element_stack.is_empty() && boot_delivery.space_id.is_none() {
-                    boot_delivery.space_id = attribute_value(&attrs, SPACE_ID_ATTRIBUTE);
+                trace!("Start element {:#?}", name.local_name);
+
+                if name.local_name == BOOT_DELIVERY_ELEMENT && element_stack.is_empty() {
+                    boot_delivery.space_id = attribute_value(&attrs, SPACE_ID_ATTRIBUTE).unwrap();
                 }
 
                 if name.local_name == CONFIGURATION_ELEMENT {
-                    builder = BootConfiguration::builder();
-                    builder.name = attribute_value(&attrs, NAME_ATTRIBUTE);
+                    let name_attr = attribute_value(&attrs, NAME_ATTRIBUTE);
+
+                    skip = !&name_attr.as_deref().is_some_and(|s| s.starts_with("COMMERCIAL"));
+
+                    if skip {
+                        element_stack.push(CONFIGURATION_ELEMENT.to_owned());
+                    } else {
+                        builder.name = name_attr.unwrap();
+                    }
+                }
+
+                if skip {
+                    continue;
                 }
 
                 if element_stack.iter().any(|e| e == CONFIGURATION_ELEMENT) {
                     if name.local_name == ATTRIBUTES_ELEMENT {
-                        let regex = regex!(r#"PLATFORM_ID="([0-9A-F]{8})";PLF_ROOT_HASH="([0-9A-F]{48}|[0-9A-F]{32})"#);
-
                         if let Some(val) = attribute_value(&attrs, VALUE_ATTRIBUTE) {
-                            if let Some(cap) = regex.captures(val.as_str()) {
-                                builder.platform_id = cap.get(1).unwrap().as_str().to_string();
-                                builder.plf_root_hash = cap.get(2).unwrap().as_str().to_string();
+                            // newer devices dont have plat id
+                            if let Some(cap) = Regex::new(r#"(PLATFORM_ID="[0-9A-F]{8}";)?PLF_ROOT_HASH="([0-9A-F]{96}|[0-9A-F]{64}|[0-9A-F]{48})"#)?.captures(val.as_str()) {
+                                if let Some(m) = cap.get(2) {
+                                    let str = m.as_str();
+                                    ensure!(root_key_hash.starts_with(str), "PLF_ROOT_HASH does not match! Expected {root_key_hash}, got {str}.");
+                                    builder.plf_root_hash = Some(str.to_owned());
+                                }
+                            } else {
+                                return Err(anyhow!("Failed to match value attribute regex"));
                             }
                         }
                     }
@@ -120,21 +140,33 @@ pub fn boot_delivery(path: impl AsRef<Path>) -> anyhow::Result<BootDelivery> {
                 element_stack.push(name.local_name);
             }
             XmlEvent::EndElement { name } => {
+                trace!("End element {:#?}", name.local_name);
+
+                if skip {
+                    if name.local_name == CONFIGURATION_ELEMENT {
+                        pop_element(&mut element_stack, &name.local_name)?;
+                        skip = false;
+                    }
+                    continue;
+                }
+
                 pop_element(&mut element_stack, &name.local_name)?;
 
                 if name.local_name == CONFIGURATION_ELEMENT {
+                    let d = format!("{builder:#?}");
                     let bc = builder.build()
-                        .ok_or(anyhow::Error::msg("Boot Configuration is missing required fields!"))?;
+                        .ok_or(anyhow::Error::msg(format!("Boot Configuration is missing required fields!\n {d}")))?;
 
-                    boot_delivery.configurations.push(bc);
-                    builder = BootConfiguration::builder();
+                    boot_delivery.config = bc;
+
+                    return Ok(boot_delivery);
                 }
             }
             _ => {}
         }
     }
 
-    Ok(boot_delivery)
+    Err(anyhow!("No commercial boot configuration found!"))
 }
 
 pub fn partition_delivery() -> anyhow::Result<Vec<PathBuf>> {
