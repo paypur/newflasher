@@ -115,33 +115,26 @@ fn main() {
 
     println!("{:─<97}", "Processing boot delivery ");
 
-    match boot_delivery(PathBuf::from("./boot/boot_delivery.xml")) {
+    match boot_delivery(&platform_id) {
         Ok(bd) => {
-            debug!("{:#?}", bd.configurations);
+            debug!("{:#?}", bd.config);
 
-            // TODO: why???
-            let mut modified = platform_id.clone();
-            modified.replace_range(..2, "00");
+            let ta = TrimArea::try_from_file(PathBuf::from("./boot").join(&bd.config.boot_config));
+            ta.unwrap().flash(&mut usb).unwrap();
 
-            // TODO: check bd.space_id with version_bootloader
-            bd.configurations.iter()
-                .filter(|bc| bc.platform_id == modified && root_key_hash.contains(bc.plf_root_hash.as_str()))
-                .for_each(|bc| {
-                    let ta = TrimArea::try_from_file(PathBuf::from("./boot").join(&bc.boot_config));
-                    ta.unwrap().flash(&mut usb).unwrap();
-
-                    for img in &bc.boot_images {
-                        let path = PathBuf::from(PathBuf::from("./boot").join(img));
-                        if img.contains("bootloader") {
-                            process_sins(&mut usb, path.as_path(), "flash", current_slot).unwrap();
-                        } else {
-                            println!("Skipping non bootloader {} file", path.display());
-                        }
-                    }
-                });
+            for img in &bd.config.boot_images {
+                let path = PathBuf::from(PathBuf::from("./boot").join(img));
+                if img.contains("bootloader") {
+                    process_sins(&mut usb, path.as_path(), "flash", current_slot).unwrap();
+                } else {
+                    println!("Skipping non bootloader {} file", path.display());
+                }
+            }
         },
         Err(e) => error!("{e}"),
     }
+
+    panic!("skip");
 
     print_firmware_history(&mut usb).unwrap();
 
