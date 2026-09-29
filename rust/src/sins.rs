@@ -47,7 +47,7 @@ fn process_sins_slot(
 
     let file_name = sin_path.file_name().unwrap().to_string_lossy();
 
-    if keep_userdata && noerase_in_updatexml(file_name.as_ref()) {
+    if keep_userdata && noerase_in_updatexml(sin_path.file_name().unwrap()) {
         info!("Skipping {}", file_name);
         return Ok(());
     }

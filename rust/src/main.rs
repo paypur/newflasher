@@ -7,7 +7,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::exit;
 use anyhow::{ensure, Context};
-use log::{debug, error, info};
+use log::{debug, info};
 use crate::ta::{TrimArea};
 use crate::xml_parser::boot_delivery;
 
@@ -26,10 +26,14 @@ fn main() {
         .format_timestamp(None)
         .init();
 
-    // TODO: remove this
-    // std::env::set_current_dir("../../../xperia/H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C")
-    std::env::set_current_dir("../../../xperia/H8314_Customized_US_52.1.A.3.137-R7C")
-      .unwrap();
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.len() < 2 {
+        eprintln!("Missing directory argument");
+        exit(1);
+    }
+
+    std::env::set_current_dir(args[1].as_str()).unwrap();
 
     let mut usb = get_flash_mode_rs(VID, PID);
 
@@ -78,36 +82,54 @@ fn main() {
       exit(1);
     }
 
+    /* parse relevant files first */
+    let tas = fs::read_dir("./").unwrap()
+        .filter_map(|entry| is_ta_file(entry))
+        .filter(|path| !noerase_in_updatexml(path.file_name().unwrap()))
+        .map(|path| TrimArea::try_from_file(path))
+        .collect::<Result<Vec<_>, _>>()
+        .expect("All .ta files could not be successfully parsed!");
+    if tas.is_empty() {
+        eprintln!("No .ta files found!");
+        exit(1);
+    } else {
+        info!("Found {} .ta files", tas.len());
+    }
+
+    let partition = xml_parser::partition_delivery().unwrap();
+    info!("Found {} partition files", partition.len());
+
+    let sins = fs::read_dir("./")
+        .unwrap()
+        .filter_map(|entry| is_sin_file(entry))
+        .collect::<Vec<_>>();
+    info!("Found {} .sin files", sins.len());
+
+    let boot = boot_delivery(&root_key_hash).unwrap();
+    info!("Found {} configuration in boot.xml", boot.config._name);
+    debug!("{:#?}", boot);
+
+    let boot_ta = TrimArea::try_from_file(PathBuf::from("./boot").join(&boot.config.boot_config)).unwrap();
+    debug!("{:#?}", boot_ta);
+
+
+    /* begin flashing */
     enter_flash_mode(&mut usb);
 
     println!("{:─<97}", "Processing ./partition files ");
 
-    xml_parser::partition_delivery()
-      .expect("failed to read partition_delivery.xml")
-      .iter()
-      .for_each(|path| process_sins(&mut usb, path.as_path(), "Repartition", current_slot.other()).unwrap());
+    partition.iter().for_each(|path| process_sins(&mut usb, path.as_path(), "Repartition", current_slot.other()).unwrap());
 
     println!("{:─<97}", "Processing .sin files ");
 
-    fs::read_dir("./").unwrap()
-        .filter_map(|entry| is_sin_file(entry))
-        .for_each(|path|
-             process_sins(&mut usb, path.as_path(), "flash", current_slot.other())
-                .with_context(|| format!("Failed to flash {}", path.display())).unwrap()
-        );
-
+    for path in sins {
+        process_sins(&mut usb, path.as_path(), "flash", current_slot.other()).with_context(|| format!("Failed to flash {}", path.display())).unwrap()
+    };
+ 
     println!("{:─<97}", "Processing .ta files ");
 
-    // validate all these ta's before flashing
-    let tas = fs::read_dir("./").unwrap()
-        .filter_map(|entry| is_ta_file(entry))
-        .filter(|path| !noerase_in_updatexml(path.file_name().unwrap().to_str().unwrap()))
-        .map(|path| TrimArea::try_from_file(path))
-        .collect::<Result<Vec<_>, _>>()
-        .expect("All .ta files could not be successfully parsed!");
-
     for ta in tas {
-        let progress = ProgressBar::new(0, format!("Processing {}", ta.name));
+        let progress = ProgressBar::new(1, format!("Processing {}", ta.name));
         ta.flash(&mut usb).unwrap();
         progress.set_position(1);
         progress.okay();
@@ -115,26 +137,14 @@ fn main() {
 
     println!("{:─<97}", "Processing boot delivery ");
 
-    match boot_delivery(&platform_id) {
-        Ok(bd) => {
-            debug!("{:#?}", bd.config);
+    boot_ta.flash(&mut usb).unwrap();
 
-            let ta = TrimArea::try_from_file(PathBuf::from("./boot").join(&bd.config.boot_config));
-            ta.unwrap().flash(&mut usb).unwrap();
-
-            for img in &bd.config.boot_images {
-                let path = PathBuf::from(PathBuf::from("./boot").join(img));
-                if img.contains("bootloader") {
-                    process_sins(&mut usb, path.as_path(), "flash", current_slot).unwrap();
-                } else {
-                    println!("Skipping non bootloader {} file", path.display());
-                }
-            }
-        },
-        Err(e) => error!("{e}"),
+    for img in &boot.config.boot_images {
+        let path = PathBuf::from("./boot").join(img);
+        process_sins(&mut usb, path.as_path(), "flash", current_slot).unwrap();
     }
 
-    panic!("skip");
+    panic!("Skipped syncing");
 
     print_firmware_history(&mut usb).unwrap();
 

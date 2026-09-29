@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use log::{Level, debug, error, log_enabled, trace};
 use std::fmt::Write;
 use std::fs::{DirEntry, File};
@@ -47,7 +48,9 @@ pub fn is_ta_file(entry: std::io::Result<DirEntry>) -> Option<PathBuf> {
     }
 }
 
-pub fn noerase_in_updatexml(search_for: &str) -> bool {
+pub fn noerase_in_updatexml(file_name: &OsStr) -> bool {
+    let search_for = file_name.to_str().unwrap();
+
     let file = match File::open("update.xml") {
         Ok(f) => f,
         Err(e) => {
