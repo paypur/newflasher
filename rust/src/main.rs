@@ -9,7 +9,6 @@ use std::process::exit;
 use anyhow::{ensure, Context};
 use log::{debug, info};
 use crate::ta::{TrimArea};
-use crate::xml_parser::boot_delivery;
 
 pub mod tests;
 pub mod types;
@@ -105,11 +104,10 @@ fn main() {
         .collect::<Vec<_>>();
     info!("Found {} .sin files", sins.len());
 
-    let boot = boot_delivery(&root_key_hash).unwrap();
-    info!("Found {} configuration in boot.xml", boot.config._name);
+    let boot = xml_parser::boot_delivery(&root_key_hash).unwrap();
     debug!("{:#?}", boot);
 
-    let boot_ta = TrimArea::try_from_file(PathBuf::from("./boot").join(&boot.config.boot_config)).unwrap();
+    let boot_ta = TrimArea::try_from_file(PathBuf::from("./boot").join(&boot.boot_config)).unwrap();
     debug!("{:#?}", boot_ta);
 
 
@@ -139,7 +137,7 @@ fn main() {
 
     boot_ta.flash(&mut usb).unwrap();
 
-    for img in &boot.config.boot_images {
+    for img in &boot.boot_images {
         let path = PathBuf::from("./boot").join(img);
         process_sins(&mut usb, path.as_path(), "flash", current_slot).unwrap();
     }

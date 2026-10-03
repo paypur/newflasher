@@ -3,18 +3,14 @@ use regex::{Regex};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use log::{debug, trace};
+use log::{info, trace};
 use xml::attribute::OwnedAttribute;
 use xml::reader::XmlEvent;
 use xml::ParserConfig;
 
 #[derive(Debug, Default)]
-pub struct BootDelivery {
-    pub space_id: String,
-    pub config: BootConfiguration,
-}
-#[derive(Debug, Default)]
 pub struct BootConfiguration {
+    pub _space_id: String,
     pub _name: String,
     pub _platform_id: Option<String>,
     pub plf_root_hash: String,
@@ -31,7 +27,8 @@ impl BootConfiguration {
 
 #[derive(Debug, Default)]
 struct BootConfigurationBuilder {
-    name: String,
+    space_id: Option<String>,
+    name: Option<String>,
     platform_id: Option<String>,
     plf_root_hash: Option<String>,
     hw_config_rev: Option<String>,
@@ -42,7 +39,8 @@ struct BootConfigurationBuilder {
 impl BootConfigurationBuilder {
     pub fn build(self) -> Option<BootConfiguration> {
         Some(BootConfiguration {
-            _name: self.name,
+            _space_id: self.space_id?,
+            _name: self.name?,
             _platform_id: self.platform_id,
             plf_root_hash: self.plf_root_hash?,
             hw_config_rev: self.hw_config_rev?,
@@ -67,14 +65,12 @@ const VALUE_ATTRIBUTE: &str = "VALUE";
 const REVISION_ATTRIBUTE: &str = "REVISION";
 const PATH_ATTRIBUTE: &str = "PATH";
 
-pub fn boot_delivery(root_key_hash: &str) -> anyhow::Result<BootDelivery> {
-    let path = PathBuf::from("boot/boot_delivery.xml");
-    let boot_delivery_file = File::open(&path).with_context(|| format!("failed to open {}", path.display()))?;
+pub fn boot_delivery(root_key_hash: &str) -> anyhow::Result<BootConfiguration> {
+    let boot_delivery_file = File::open("boot/boot_delivery.xml").context("Failed to open boot_delivery.xml")?;
     let reader = ParserConfig::default().create_reader(BufReader::new(boot_delivery_file));
 
     let mut element_stack = Vec::<String>::new();
-    let mut boot_delivery = BootDelivery::default();
-    let mut builder = BootConfiguration::builder();
+    let mut config = BootConfiguration::builder();
 
     let mut skip = false;
 
@@ -85,7 +81,7 @@ pub fn boot_delivery(root_key_hash: &str) -> anyhow::Result<BootDelivery> {
                 trace!("Start element {:#?}", name.local_name);
 
                 if name.local_name == BOOT_DELIVERY_ELEMENT && element_stack.is_empty() {
-                    boot_delivery.space_id = attribute_value(&attrs, SPACE_ID_ATTRIBUTE).unwrap();
+                    config.space_id = attribute_value(&attrs, SPACE_ID_ATTRIBUTE);
                 }
 
                 if name.local_name == CONFIGURATION_ELEMENT {
@@ -96,7 +92,7 @@ pub fn boot_delivery(root_key_hash: &str) -> anyhow::Result<BootDelivery> {
                     if skip {
                         element_stack.push(CONFIGURATION_ELEMENT.to_owned());
                     } else {
-                        builder.name = name_attr.unwrap();
+                        config.name = name_attr;
                     }
                 }
 
@@ -112,7 +108,7 @@ pub fn boot_delivery(root_key_hash: &str) -> anyhow::Result<BootDelivery> {
                                 if let Some(m) = cap.get(2) {
                                     let str = m.as_str();
                                     ensure!(root_key_hash.starts_with(str), "PLF_ROOT_HASH does not match! Expected {root_key_hash}, got {str}.");
-                                    builder.plf_root_hash = Some(str.to_owned());
+                                    config.plf_root_hash = Some(str.to_owned());
                                 }
                             } else {
                                 return Err(anyhow!("Failed to match value attribute regex"));
@@ -121,17 +117,17 @@ pub fn boot_delivery(root_key_hash: &str) -> anyhow::Result<BootDelivery> {
                     }
 
                     if name.local_name == HWCONFIG_ELEMENT {
-                        builder.hw_config_rev = builder.hw_config_rev.or_else(|| attribute_value(&attrs, REVISION_ATTRIBUTE));
+                        config.hw_config_rev = config.hw_config_rev.or_else(|| attribute_value(&attrs, REVISION_ATTRIBUTE));
                     }
 
                     if element_stack.last().is_some_and(|e| e == BOOT_CONFIG_ELEMENT) {
-                        builder.boot_config = builder.boot_config.or_else(|| attribute_value(&attrs, PATH_ATTRIBUTE));
+                        config.boot_config = config.boot_config.or_else(|| attribute_value(&attrs, PATH_ATTRIBUTE));
                     }
 
                     if element_stack.last().is_some_and(|e| e == BOOT_IMAGES_ELEMENT) {
                         if name.local_name == FILE_ELEMENT {
                             if let Some(path) = attribute_value(&attrs, PATH_ATTRIBUTE) {
-                                builder.boot_images.push(path);
+                                config.boot_images.push(path);
                             }
                         }
                     }
@@ -153,13 +149,13 @@ pub fn boot_delivery(root_key_hash: &str) -> anyhow::Result<BootDelivery> {
                 pop_element(&mut element_stack, &name.local_name)?;
 
                 if name.local_name == CONFIGURATION_ELEMENT {
-                    let d = format!("{builder:#?}");
-                    let bc = builder.build()
-                        .ok_or(anyhow::Error::msg(format!("Boot Configuration is missing required fields!\n {d}")))?;
+                    let d = format!("{config:#?}");
+                    let bc = config.build()
+                                   .ok_or(anyhow!("Boot Configuration is missing required fields!\n {d}"))?;
 
-                    boot_delivery.config = bc;
+                    info!("Found {} configuration in boot.xml", bc._name);
 
-                    return Ok(boot_delivery);
+                    return Ok(bc);
                 }
             }
             _ => {}
@@ -200,6 +196,8 @@ pub fn partition_delivery() -> anyhow::Result<Vec<PathBuf>> {
             _ => {}
         }
     }
+
+    info!("Found {} partition files", partition_paths.len());
 
     Ok(partition_paths)
 }
