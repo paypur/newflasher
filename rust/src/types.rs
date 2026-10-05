@@ -9,7 +9,7 @@ use std::time::Duration;
 use std::{mem};
 use std::borrow::Cow;
 use indicatif::{ProgressFinish, ProgressStyle};
-use log::{debug, error, trace};
+use log::{debug, info};
 use tar::Entry;
 
 use crate::utils::{trace_formatted_hex};
@@ -186,8 +186,8 @@ impl From<&[u8]> for FastbootHeader {
 }
 
 pub struct FastbootDevice {
-    device: Device,
-    interface: Interface,
+    _device: Device,
+    _interface: Interface,
     pub reader: EndpointRead<Bulk>,
     pub writer: EndpointWrite<Bulk>,
     pub reply: ByteVec,
@@ -198,11 +198,35 @@ const NUM_TRANSFERS: usize = 16;
 const TEN_SEC: Duration = Duration::from_secs(10);
 
 impl FastbootDevice {
-    pub fn new(device: Device, interface: Interface) -> Self {
-        let reader = interface.endpoint::<Bulk, In>(IN).unwrap().reader(BUFFER_SIZE).with_num_transfers(NUM_TRANSFERS).with_read_timeout(TEN_SEC);
-        let writer = interface.endpoint::<Bulk, Out>(OUT).unwrap().writer(BUFFER_SIZE).with_num_transfers(NUM_TRANSFERS).with_write_timeout(TEN_SEC);
+    pub fn new(_device: Device, _interface: Interface) -> Self {
+        let reader = _interface.endpoint::<Bulk, In>(IN).unwrap().reader(BUFFER_SIZE).with_num_transfers(NUM_TRANSFERS).with_read_timeout(TEN_SEC);
+        let writer = _interface.endpoint::<Bulk, Out>(OUT).unwrap().writer(BUFFER_SIZE).with_num_transfers(NUM_TRANSFERS).with_write_timeout(TEN_SEC);
         let vec = Vec::<u8>::with_capacity(256);
-        Self { device, interface, reader, writer, reply: vec.into() }
+        Self { _device, _interface, reader, writer, reply: vec.into() }
+    }
+
+    /* utility commands */
+    pub fn reboot_system(&mut self) -> Result<()> {
+        self.command_expect("continue", FastbootHeader::Okay)
+    }
+
+    pub fn enter_flash_mode(&mut self) -> Result<()> {
+        self.download(&[1u8])?;
+        self.command_expect("Write-TA:2:10100", FastbootHeader::Okay)?;
+        info!("Entered flashmode");
+        Ok(())
+    }
+
+    pub fn exit_flash_mode(&mut self) -> Result<()> {
+        self.download(&[0u8])?;
+        self.command_expect("Write-TA:2:10100", FastbootHeader::Okay)?;
+        info!("Exited flashmode");
+        Ok(())
+    }
+
+    pub fn set_active_slot(&mut self, slot: Slot) -> Result<()> {
+        let cmd = format!("set_active:{slot}");
+        self.command_expect(cmd.as_str(), FastbootHeader::Okay)
     }
 
     pub fn command(&mut self, cmd: &str) -> Result<()> {

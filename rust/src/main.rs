@@ -112,7 +112,7 @@ fn main() {
 
 
     /* begin flashing */
-    enter_flash_mode(&mut usb);
+    usb.enter_flash_mode().unwrap();
 
     println!("{:─<97}", "Processing ./partition files ");
 
@@ -146,31 +146,12 @@ fn main() {
 
     print_firmware_history(&mut usb).unwrap();
 
-    set_active_slot(&mut usb, current_slot.other());
-    exit_flash_mode(&mut usb);
+    usb.set_active_slot(current_slot.other()).unwrap();
+    usb.exit_flash_mode().unwrap();
 
     usb.command_expect("Sync", FastbootHeader::Okay).unwrap();
 
-    // reboot to system
-    usb.command_expect("continue", FastbootHeader::Okay).unwrap();
-}
-
-fn enter_flash_mode(usb: &mut FastbootDevice) {
-    usb.download(&[1u8]).unwrap();
-    usb.command_expect("Write-TA:2:10100", FastbootHeader::Okay).unwrap();
-    info!("Entered flashmode");
-}
-
-fn exit_flash_mode(usb: &mut FastbootDevice) {
-    usb.download(&[0u8]).unwrap();
-    usb.command_expect("Write-TA:2:10100", FastbootHeader::Okay).unwrap();
-    info!("Exited flashmode");
-}
-
-fn set_active_slot(usb: &mut FastbootDevice, slot: Slot) {
-    let s: &str = slot.as_str();
-    let cmd = format!("set_active:{s}");
-    usb.command_expect(cmd.as_str(), FastbootHeader::Okay).unwrap();
+    usb.reboot_system().unwrap();
 }
 
 fn get_flash_mode_rs(vid: u16, pid: u16) -> FastbootDevice {
