@@ -88,6 +88,8 @@ fn process_sins_slot(
         .filter(|e| filter_entry(e))
         .enumerate() {
         let entry_name = CStr::from_bytes_until_nul(&entry.header().as_ustar().unwrap().name)?.to_string_lossy().to_string();
+        let other = sin_path.to_string_lossy().contains("_other");
+
         if i == 0 {
             transfer_cms(usb, &mut entry, &entry_name).with_context(|| format!("Failed to transfer '{entry_name}' cms"))?;
         } else {
@@ -96,26 +98,14 @@ fn process_sins_slot(
 
             // erase partition
             if i == 1 && fb_end_cmd == "flash" {
-                let erase = format!("erase:{flash_prefix}");
+                let cmd = match (has_slot, other) {
+                    (false, _) => format!("erase:{flash_prefix}"),
+                    (true, false) => format!("erase:{flash_prefix}_{target_slot}"),
+                    (true, true) => format!("erase:{flash_prefix}_{}", target_slot.other()),
+                };
 
-                let erase_current = format!("{erase}_{}", target_slot);
-                let erase_other = format!("{erase}_{}", target_slot.other());
-
-                // if flash_both_slots && has_slot {
-                //     println!("    {erase_current}");
-                //     usb.write_and_expect_reply(erase_current.as_bytes(), FastbootHeader::Okay)?;
-                //     println!("    {erase_other}");
-                //     usb.write_and_expect_reply(erase_other.as_bytes(), FastbootHeader::Okay)?;
-                // } else {
-                    let cmd = match (has_slot, entry_name.contains("_other")) {
-                        (false, _) => erase,
-                        (true, true) => erase_other,
-                        (true, false) => erase_current,
-                    };
-
-                    debug!("    {cmd}");
-                    usb.write_and_expect_reply(cmd.as_bytes(), FastbootHeader::Okay)?;
-                // }
+                debug!("  {cmd}");
+                usb.command_expect(&cmd, FastbootHeader::Okay)?;
             }
 
             /* Oreo changed partition image name, so this is a quick fix */
@@ -130,8 +120,10 @@ fn process_sins_slot(
                     // TODO: command not authenticated??
                     flash_entry(usb, fb_end_cmd, &flash_prefix, Some(target_slot.other()))?;
                 } else*/
+                // TODO: literally the same as erasing
+/*
                 if has_slot {
-                    let slot = match entry_name.contains("_other") {
+                    let slot = match other {
                         true => target_slot.other(),
                         false => target_slot
                     };
@@ -139,6 +131,14 @@ fn process_sins_slot(
                 } else {
                     flash_entry(usb, fb_end_cmd, &flash_prefix, None).with_context(|| format!("Chunk {i}"))?;
                 }
+*/
+                let cmd = match (has_slot, other) {
+                    (false, _) => format!("{fb_end_cmd}:{flash_prefix}"),
+                    (true, false) => format!("{fb_end_cmd}:{flash_prefix}_{target_slot}"),
+                    (true, true) => format!("{fb_end_cmd}:{flash_prefix}_{}", target_slot.other()),
+                };
+
+                usb.command_expect(&cmd, FastbootHeader::Okay)?;
             }
         }
         progress.set_position(i as u64);
