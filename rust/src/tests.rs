@@ -34,7 +34,7 @@ mod tests {
     static DEVICE: OnceLock<Mutex<FastbootDevice>> = OnceLock::new();
 
     fn get_device() -> &'static Mutex<FastbootDevice> {
-        DEVICE.get_or_init(|| Mutex::new(get_flash_mode_rs(VID, PID)))
+        DEVICE.get_or_init(|| Mutex::new(FastbootDevice::new()))
     }
 
     fn test_in_dir(dir: impl AsRef<Path>, f: impl Fn()) {
