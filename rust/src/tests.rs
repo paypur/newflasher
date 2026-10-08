@@ -155,38 +155,38 @@ mod tests {
     fn test_fastboot_vars_xz2c() {
         let mut usb = get_device().lock().unwrap();
 
-        assert_eq!(usb.getvar_u32("getvar:max-download-size", 0), 104857600);
-        assert_eq!(usb.getvar_string("getvar:product").unwrap(), "H8314");
-        assert_eq!(usb.getvar_string("getvar:version").unwrap(), "0.4");
-        assert_eq!(usb.getvar_string("getvar:version-bootloader").unwrap(), "1310-7079_X_Boot_SDM845_LA2.0.1_Q_207");
-        assert_eq!(usb.getvar_string("getvar:serialno").unwrap(), "BH9006VJCU");
-        assert_eq!(usb.getvar_string("getvar:secure").unwrap(), "no");
-        assert_eq!(usb.getvar_string("getvar:Sector-size").unwrap(), "4096");
-        assert_eq!(usb.getvar_string("getvar:Loader-version").unwrap(), "XFL-SDM845-O-25");
-        assert_eq!(usb.getvar_string("getvar:Phone-id").unwrap(), "0000:35498709917379");
-        assert_eq!(usb.getvar_string("getvar:Device-id").unwrap(), "A09A3D8A");
-        assert_eq!(usb.getvar_string("getvar:Platform-id").unwrap(), "2008B0E1");
-        assert_eq!(usb.getvar_string("getvar:Rooting-status").unwrap(), "ROOTED");
-        assert_eq!(usb.getvar_string("getvar:Ufs-info").unwrap(), "TOSHIBA,THGAF8G9T43BAIRB,0300");
-        assert_eq!(usb.getvar_string("getvar:Emmc-info").unwrap(), "Emmc-info not supported");
-        assert_eq!(usb.getvar_string("getvar:Default-security").unwrap(), "ON");
-        assert_eq!(usb.getvar_string("getvar:Keystore-counter").unwrap(), "2");
-        assert_eq!(usb.getvar_string("getvar:Security-state").unwrap(), "U0vSz8eM1gk1FZup2A6hQlhcZnS9ZR3Up1pg2aPJewY=");
-        assert_eq!(usb.getvar_string("getvar:S1-root").unwrap(), "S1_Root_e090");
-        assert_eq!(usb.getvar_string("getvar:Sake-root").unwrap(), "B7DF");
+        assert_eq!(usb.getvar_u32("max-download-size").unwrap(), 104857600);
+        assert_eq!(usb.getvar_string("product").unwrap(), "H8314");
+        assert_eq!(usb.getvar_string("version").unwrap(), "0.4");
+        assert_eq!(usb.getvar_string("version-bootloader").unwrap(), "1310-7079_X_Boot_SDM845_LA2.0.1_Q_207");
+        assert_eq!(usb.getvar_string("serialno").unwrap(), "BH9006VJCU");
+        assert_eq!(usb.getvar_string("secure").unwrap(), "no");
+        assert_eq!(usb.getvar_string("Sector-size").unwrap(), "4096");
+        assert_eq!(usb.getvar_string("Loader-version").unwrap(), "XFL-SDM845-O-25");
+        assert_eq!(usb.getvar_string("Phone-id").unwrap(), "0000:35498709917379");
+        assert_eq!(usb.getvar_string("Device-id").unwrap(), "A09A3D8A");
+        assert_eq!(usb.getvar_string("Platform-id").unwrap(), "2008B0E1");
+        assert_eq!(usb.getvar_string("Rooting-status").unwrap(), "ROOTED");
+        assert_eq!(usb.getvar_string("Ufs-info").unwrap(), "TOSHIBA,THGAF8G9T43BAIRB,0300");
+        assert_eq!(usb.getvar_string("Emmc-info").unwrap(), "Emmc-info not supported");
+        assert_eq!(usb.getvar_string("Default-security").unwrap(), "ON");
+        assert_eq!(usb.getvar_string("Keystore-counter").unwrap(), "2");
+        assert_eq!(usb.getvar_string("Security-state").unwrap(), "U0vSz8eM1gk1FZup2A6hQlhcZnS9ZR3Up1pg2aPJewY=");
+        assert_eq!(usb.getvar_string("S1-root").unwrap(), "S1_Root_e090");
+        assert_eq!(usb.getvar_string("Sake-root").unwrap(), "B7DF");
 
         usb.get_data("Get-root-key-hash").unwrap();
         assert_eq!(usb.reply.len(), 32);
         assert_eq!(usb.reply.iter().map(|b| format!("{:02X}", b)).collect::<String>(), "C8D92A2DBA1482588EFF712963329500AC7155CEA8494FDD4B7B180F2F871801");
 
-        assert_eq!(usb.getvar_string("getvar:slot-count").unwrap(), "2");
-        assert_eq!(usb.getvar_string("getvar:current-slot").unwrap(), "a");
+        assert_eq!(usb.getvar_string("slot-count").unwrap(), "2");
+        assert_eq!(usb.getvar_string("current-slot").unwrap(), "a");
 
 
-        assert_eq!(usb.getvar_string("getvar:has-slot:oem").unwrap(), "yes");
-        assert_eq!(usb.getvar_string("getvar:has-slot:system").unwrap(), "yes");
-        assert_eq!(usb.getvar_string("getvar:has-slot:fsmetadata").unwrap(), "no");
-        assert_eq!(usb.getvar_string("getvar:has-slot:dsp").unwrap(), "yes");
+        assert_eq!(usb.getvar_string("has-slot:oem").unwrap(), "yes");
+        assert_eq!(usb.getvar_string("has-slot:system").unwrap(), "yes");
+        assert_eq!(usb.getvar_string("has-slot:fsmetadata").unwrap(), "no");
+        assert_eq!(usb.getvar_string("has-slot:dsp").unwrap(), "yes");
     }
 
 /*    #[test]

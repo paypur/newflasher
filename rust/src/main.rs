@@ -38,8 +38,8 @@ fn main() {
     let mut usb = get_flash_mode_rs(VID, PID);
 
     /* fastboot variables */
-    let max_download_size = usb.getvar_u32("getvar:max-download-size").unwrap();
-    let product = usb.getvar_string("getvar:product").unwrap();
+    let max_download_size = usb.getvar_u32("max-download-size").unwrap();
+    let product = usb.getvar_string("product").unwrap();
 
     // basic checks that these files are for the correct device
     if !std::env::current_dir()
@@ -52,31 +52,31 @@ fn main() {
         exit(-1);
     }
 
-    let _version = usb.getvar_string("getvar:version").unwrap();
-    let _version_bootloader = usb.getvar_string("getvar:version-bootloader").unwrap();
-    let _serial_number = usb.getvar_string("getvar:serialno").unwrap();
-    let _is_secure = usb.getvar_string("getvar:secure").unwrap() == "yes";
-    let _sector_size = usb.getvar_u32("getvar:Sector-size").unwrap();
-    let _loader_version = usb.getvar_string("getvar:Loader-version").unwrap();
-    let _phone_id = usb.getvar_string("getvar:Phone-id").unwrap();
-    let _device_id = usb.getvar_string("getvar:Device-id").unwrap();
-    let _platform_id = usb.getvar_string("getvar:Platform-id").unwrap();
-    let _rooting_status = usb.getvar_string("getvar:Rooting-status").unwrap();
-    let _ufs_info = usb.getvar_string("getvar:Ufs-info").unwrap();
-    let _emmc_info = usb.getvar_string("getvar:Emmc-info").unwrap();
-    let _default_security = usb.getvar_string("getvar:Default-security").unwrap() == "ON";
-    let _keystore_counter = usb.getvar_string("getvar:Keystore-counter").unwrap();
-    let _security_state = usb.getvar_string("getvar:Security-state").unwrap();
-    let _s1_root = usb.getvar_string("getvar:S1-root").unwrap();
-    let _sake_root = usb.getvar_string("getvar:Sake-root").unwrap();
+    let _version = usb.getvar_string("version").unwrap();
+    let _version_bootloader = usb.getvar_string("version-bootloader").unwrap();
+    let _serial_number = usb.getvar_string("serialno").unwrap();
+    let _is_secure = usb.getvar_string("secure").unwrap() == "yes";
+    let _sector_size = usb.getvar_u32("Sector-size").unwrap();
+    let _loader_version = usb.getvar_string("Loader-version").unwrap();
+    let _phone_id = usb.getvar_string("Phone-id").unwrap();
+    let _device_id = usb.getvar_string("Device-id").unwrap();
+    let _platform_id = usb.getvar_string("Platform-id").unwrap();
+    let _rooting_status = usb.getvar_string("Rooting-status").unwrap();
+    let _ufs_info = usb.getvar_string("Ufs-info").unwrap();
+    let _emmc_info = usb.getvar_string("Emmc-info").unwrap();
+    let _default_security = usb.getvar_string("Default-security").unwrap() == "ON";
+    let _keystore_counter = usb.getvar_string("Keystore-counter").unwrap();
+    let _security_state = usb.getvar_string("Security-state").unwrap();
+    let _s1_root = usb.getvar_string("S1-root").unwrap();
+    let _sake_root = usb.getvar_string("Sake-root").unwrap();
 
     usb.get_data("Get-root-key-hash").unwrap();
     let root_key_hash = usb.reply.iter().map(|b| format!("{:02X}", b)).collect::<String>();
 
-    let _slot_count = usb.getvar_u32("getvar:slot-count").unwrap_or(1);
-    let current_slot: Slot = usb.getvar_string("getvar:current-slot").unwrap().into();
+    let _slot_count = usb.getvar_u32("slot-count").unwrap_or(1);
+    let current_slot: Slot = usb.getvar_string("current-slot").unwrap().into();
     let other_slot = current_slot.other();
-    let battery = usb.getvar_u32("getvar:Battery").unwrap();
+    let battery = usb.getvar_u32("Battery").unwrap();
 
     if battery < 15 {
       println!("Battery level is too low. Charge your device before flashing!");
