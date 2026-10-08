@@ -1,13 +1,14 @@
-use crate::types::{ByteVec, FastbootDevice, FastbootHeader, ProgressBar, Slot};
+use crate::types::{ByteVec, ProgressBar, Slot};
 use crate::utils::*;
 use anyhow::{ensure, Context};
 use flate2::read::GzDecoder;
 use std::ffi::CStr;
 use std::fs::File;
-use std::io::{Read, Seek, Write};
+use std::io::{Read, Seek};
 use std::path::{Path};
 use log::{debug, error, info};
 use tar::{Archive, Entry, EntryType};
+use crate::fastboot::{FastbootDevice, FastbootHeader};
 
 pub fn process_sins(
     usb: &mut FastbootDevice,

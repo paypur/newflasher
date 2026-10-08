@@ -1,11 +1,12 @@
 use std::fs;
-use crate::types::{ByteVec, FastbootDevice};
+use crate::types::{ByteVec};
 use anyhow::{Context, anyhow, ensure};
 use log::{debug, info};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::str::FromStr;
+use crate::fastboot::FastbootDevice;
 use crate::utils::{is_ta_file, noerase_in_updatexml};
 
 #[derive(PartialEq, Debug)]
