@@ -1,6 +1,6 @@
 use crate::sins::{process_sins};
 use crate::types::{FastbootDevice, FastbootHeader, ProgressBar, Slot};
-use crate::utils::{is_sin_file, is_ta_file, noerase_in_updatexml};
+use crate::utils::{is_sin_file};
 use nusb::MaybeFuture;
 use nusb::{Device, Interface};
 use std::fs;
@@ -23,6 +23,7 @@ const PID: u16 = 0xB00B;
 fn main() {
     env_logger::builder()
         .format_timestamp(None)
+        // .format(|buf, record| writeln!(buf, "{}", record.args()))
         .init();
 
     let args: Vec<String> = std::env::args().collect();
@@ -37,7 +38,7 @@ fn main() {
     let mut usb = get_flash_mode_rs(VID, PID);
 
     /* fastboot variables */
-    let max_download_size = usb.getvar_u32("getvar:max-download-size", 0);
+    let max_download_size = usb.getvar_u32("getvar:max-download-size").unwrap();
     let product = usb.getvar_string("getvar:product").unwrap();
 
     // basic checks that these files are for the correct device
@@ -51,30 +52,31 @@ fn main() {
         exit(-1);
     }
 
-    let version = usb.getvar_string("getvar:version").unwrap();
-    let version_bootloader = usb.getvar_string("getvar:version-bootloader").unwrap();
-    let serial_number = usb.getvar_string("getvar:serialno").unwrap();
-    let is_secure = usb.getvar_string("getvar:secure").unwrap() == "yes";
-    let sector_size = usb.getvar_u32("getvar:Sector-size", 0);
-    let loader_version = usb.getvar_string("getvar:Loader-version").unwrap();
-    let phone_id = usb.getvar_string("getvar:Phone-id").unwrap();
-    let device_id = usb.getvar_string("getvar:Device-id").unwrap();
-    let platform_id = usb.getvar_string("getvar:Platform-id").unwrap();
-    let rooting_status = usb.getvar_string("getvar:Rooting-status").unwrap();
-    let ufs_info = usb.getvar_string("getvar:Ufs-info").unwrap();
-    let emmc_info = usb.getvar_string("getvar:Emmc-info").unwrap();
-    let default_security = usb.getvar_string("getvar:Default-security").unwrap() == "ON";
-    let keystore_counter = usb.getvar_string("getvar:Keystore-counter").unwrap();
-    let security_state = usb.getvar_string("getvar:Security-state").unwrap();
-    let s1_root = usb.getvar_string("getvar:S1-root").unwrap();
-    let sake_root = usb.getvar_string("getvar:Sake-root").unwrap();
+    let _version = usb.getvar_string("getvar:version").unwrap();
+    let _version_bootloader = usb.getvar_string("getvar:version-bootloader").unwrap();
+    let _serial_number = usb.getvar_string("getvar:serialno").unwrap();
+    let _is_secure = usb.getvar_string("getvar:secure").unwrap() == "yes";
+    let _sector_size = usb.getvar_u32("getvar:Sector-size").unwrap();
+    let _loader_version = usb.getvar_string("getvar:Loader-version").unwrap();
+    let _phone_id = usb.getvar_string("getvar:Phone-id").unwrap();
+    let _device_id = usb.getvar_string("getvar:Device-id").unwrap();
+    let _platform_id = usb.getvar_string("getvar:Platform-id").unwrap();
+    let _rooting_status = usb.getvar_string("getvar:Rooting-status").unwrap();
+    let _ufs_info = usb.getvar_string("getvar:Ufs-info").unwrap();
+    let _emmc_info = usb.getvar_string("getvar:Emmc-info").unwrap();
+    let _default_security = usb.getvar_string("getvar:Default-security").unwrap() == "ON";
+    let _keystore_counter = usb.getvar_string("getvar:Keystore-counter").unwrap();
+    let _security_state = usb.getvar_string("getvar:Security-state").unwrap();
+    let _s1_root = usb.getvar_string("getvar:S1-root").unwrap();
+    let _sake_root = usb.getvar_string("getvar:Sake-root").unwrap();
 
     usb.get_data("Get-root-key-hash").unwrap();
     let root_key_hash = usb.reply.iter().map(|b| format!("{:02X}", b)).collect::<String>();
 
-    let slot_count = usb.getvar_u32("getvar:slot-count", 1);
-    let current_slot: Slot = usb.getvar_string("getvar:current-slot").unwrap().as_str().into();
-    let battery = usb.getvar_u32("getvar:Battery", 0);
+    let _slot_count = usb.getvar_u32("getvar:slot-count").unwrap_or(1);
+    let current_slot: Slot = usb.getvar_string("getvar:current-slot").unwrap().into();
+    let other_slot = current_slot.other();
+    let battery = usb.getvar_u32("getvar:Battery").unwrap();
 
     if battery < 15 {
       println!("Battery level is too low. Charge your device before flashing!");
@@ -82,21 +84,9 @@ fn main() {
     }
 
     /* parse relevant files first */
-    let tas = fs::read_dir("./").unwrap()
-        .filter_map(|entry| is_ta_file(entry))
-        .filter(|path| !noerase_in_updatexml(path.file_name().unwrap()))
-        .map(|path| TrimArea::try_from_file(path))
-        .collect::<Result<Vec<_>, _>>()
-        .expect("All .ta files could not be successfully parsed!");
-    if tas.is_empty() {
-        eprintln!("No .ta files found!");
-        exit(1);
-    } else {
-        info!("Found {} .ta files", tas.len());
-    }
+    let tas = ta::parse_all_files().unwrap();
 
     let partition = xml_parser::partition_delivery().unwrap();
-    info!("Found {} partition files", partition.len());
 
     let sins = fs::read_dir("./")
         .unwrap()
@@ -116,12 +106,19 @@ fn main() {
 
     println!("{:─<97}", "Processing ./partition files ");
 
-    partition.iter().for_each(|path| process_sins(&mut usb, path.as_path(), "Repartition", current_slot.other()).unwrap());
+    for path in partition {
+        process_sins(&mut usb, path.as_path(), "Repartition", other_slot).unwrap();
+    }
 
     println!("{:─<97}", "Processing .sin files ");
 
     for path in sins {
-        process_sins(&mut usb, path.as_path(), "flash", current_slot.other()).with_context(|| format!("Failed to flash {}", path.display())).unwrap()
+        if path.file_name().unwrap().to_string_lossy().contains("persist") {
+            info!("Skipping {}", path.to_string_lossy());
+            continue;
+        }
+
+        process_sins(&mut usb, path.as_path(), "flash", other_slot).with_context(|| format!("Failed to flash {}", path.display())).unwrap()
     };
  
     println!("{:─<97}", "Processing .ta files ");
@@ -139,14 +136,12 @@ fn main() {
 
     for img in &boot.boot_images {
         let path = PathBuf::from("./boot").join(img);
-        process_sins(&mut usb, path.as_path(), "flash", current_slot).unwrap();
+        process_sins(&mut usb, path.as_path(), "flash", other_slot).unwrap();
     }
 
-    panic!("Skipped syncing");
+    // print_firmware_history(&mut usb).unwrap();
 
-    print_firmware_history(&mut usb).unwrap();
-
-    usb.set_active_slot(current_slot.other()).unwrap();
+    usb.set_active_slot(other_slot).unwrap();
     usb.exit_flash_mode().unwrap();
 
     usb.command_expect("Sync", FastbootHeader::Okay).unwrap();

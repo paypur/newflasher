@@ -6,6 +6,7 @@ mod tests {
 
     use std::fs::{DirEntry, File};
     use std::io::Read;
+    use std::os::unix::raw::uid_t;
     use std::path::{Path, PathBuf};
     use std::slice::from_raw_parts;
     use std::sync::{Mutex, OnceLock};
@@ -55,22 +56,22 @@ mod tests {
 
         test_in_dir("tests/data/H8314_Customized_US_52.1.A.3.137-R7C/", || {
             let boot = boot_delivery("C8D92A2DBA1482588EFF712963329500AC7155CEA8494FDD4B7B180F2F871801").unwrap();
-            assert_eq!(boot.space_id, String::from("1310-7079"));
-            assert_eq!(boot.config._name, String::from("COMMERCIAL_0008B0E1"));
-            assert!(boot.config.plf_root_hash.starts_with("C8D92A2DBA1482588EFF712963329500AC7155CEA8494FDD"));
-            assert_eq!(boot.config.hw_config_rev, String::from("HWC_Tama_Com_001"));
-            assert_eq!(boot.config.boot_config, String::from("Apollo_XBootConfig_MiscTA.ta"));
-            assert_eq!(boot.config.boot_images, vec![String::from("bootloader_X_BOOT_SDM845_LA2_0_1_Q_208_X-FLASH-ALL-B6B5.sin")]);
+            assert_eq!(boot._space_id, String::from("1310-7079"));
+            assert_eq!(boot._name, String::from("COMMERCIAL_0008B0E1"));
+            assert!(boot.plf_root_hash.starts_with("C8D92A2DBA1482588EFF712963329500AC7155CEA8494FDD"));
+            assert_eq!(boot.hw_config_rev, String::from("HWC_Tama_Com_001"));
+            assert_eq!(boot.boot_config, String::from("Apollo_XBootConfig_MiscTA.ta"));
+            assert_eq!(boot.boot_images, vec![String::from("bootloader_X_BOOT_SDM845_LA2_0_1_Q_208_X-FLASH-ALL-B6B5.sin")]);
         });
 
         test_in_dir("tests/data/XQ-EC72_Customized_HK_69.2.A.4.110/", || {
             let boot = boot_delivery(std::env::var("ROOT_KEY_HASH").unwrap().as_str()).unwrap();
-            assert_eq!(boot.space_id, String::from("8650-0001"));
-            assert_eq!(boot.config._name, String::from("COMMERCIAL_002270E1"));
-            assert!(boot.config.plf_root_hash.starts_with("2B9EB2535D4A1179B294D4D083F68D9D3DDC95164111B84157D8BE0169E35DE5C6F79EA6E1034FE3D7A684F3C5166250"));
-            assert_eq!(boot.config.hw_config_rev, String::from("HWC_XGeneric_001"));
-            assert_eq!(boot.config.boot_config, String::from("PDX245_XBootConfig_MiscTA.ta"));
-            assert_eq!(boot.config.boot_images, vec![String::from("bootloader_X_BOOT_SM8650_LA1_0_U_37_X-FLASH-ALL-88DF.sin")]);
+            assert_eq!(boot._space_id, String::from("8650-0001"));
+            assert_eq!(boot._name, String::from("COMMERCIAL_002270E1"));
+            assert!(boot.plf_root_hash.starts_with("2B9EB2535D4A1179B294D4D083F68D9D3DDC95164111B84157D8BE0169E35DE5C6F79EA6E1034FE3D7A684F3C5166250"));
+            assert_eq!(boot.hw_config_rev, String::from("HWC_XGeneric_001"));
+            assert_eq!(boot.boot_config, String::from("PDX245_XBootConfig_MiscTA.ta"));
+            assert_eq!(boot.boot_images, vec![String::from("bootloader_X_BOOT_SM8650_LA1_0_U_37_X-FLASH-ALL-88DF.sin")]);
         });
 
         // test_in_dir("tests/data/XQ-GE74_Customized_HK_73.1.A.2.61/", || {
@@ -86,7 +87,7 @@ mod tests {
 
     }
 
-/*    #[test]
+    #[test]
     fn test_ta_files() {
         let compare = |file: &str, partition: u8, unit: usize, data: &[u8] | {
             let result = TrimArea::try_from_file(PathBuf::from(file)).unwrap();
@@ -94,9 +95,10 @@ mod tests {
                 false => vec![BootConfigUnit { unit, data: ByteVec::from(data)}],
                 true => vec![],
             };
-            // TODO: needs to be public, but dont want to expose
-            let expected = TrimArea::new(partition, units);
-            assert_eq!(result, expected)
+
+            assert_eq!(result.partition, partition);
+            assert_eq!(result.boot_config_units[0].unit, unit);
+            assert_eq!(result.boot_config_units[0].data, data);
         };
 
         compare("../../XQ-EC72_Customized_HK_69.2.A.4.90/auto-boot.ta", 2, 0x907, &[0]);
@@ -113,7 +115,7 @@ mod tests {
         compare("../../H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/reset-non-secure-adb.ta",2, 0x9B6, &[]);
         compare("../../H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/reset-wipe-reason.ta", 2, 0x9F9, &[]);
         compare("../../H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/simlock.ta", 2, 0, &[]); // should be none
-    }*/
+    }
 
 /*    // https://android.googlesource.com/platform/system/core/+/master/fastboot/README.md
     // #[test]

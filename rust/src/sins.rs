@@ -17,12 +17,10 @@ pub fn process_sins(
 ) -> anyhow::Result<()> {
     let flash_prefix = validate_prefix(sin_path)?;
 
-    // TODO: this might be wrong for boot delivery
-    let flash_both_slots = /*flash_prefix == "bootloader"*/ flash_prefix == "bluetooth" || flash_prefix == "dsp" || flash_prefix == "modem" || flash_prefix == "rdimage";
+    let flash_both_slots = flash_prefix == "bootloader" || flash_prefix == "bluetooth" || flash_prefix == "dsp" || flash_prefix == "modem" || flash_prefix == "rdimage";
 
     process_sins_slot(usb, &sin_path, fb_end_cmd, flash_prefix.as_str(), target_slot, flash_both_slots)?;
 
-    // TODO: try to avoid reading the entry twice
     if flash_both_slots {
         process_sins_slot(usb, &sin_path, fb_end_cmd, flash_prefix.as_str(), target_slot.other(), flash_both_slots)?;
     }
@@ -52,7 +50,7 @@ fn process_sins_slot(
         return Ok(());
     }
 
-    // info!("Processing {}", base_fn);
+    // info!("Processing {}", sin_path.to_string_lossy());
 
     let has_slot = fb_end_cmd == "flash" && {
         let cmd = format!("getvar:has-slot:{flash_prefix}");
@@ -82,7 +80,8 @@ fn process_sins_slot(
 
     let progress = ProgressBar::new(parts as u64, text);
 
-    for (i, mut entry) in open_sin_archive(&sin_path)?.entries()?
+    for (i, mut entry) in open_sin_archive(&sin_path)?
+        .entries()?
         .into_iter()
         .flatten()
         .filter(|e| filter_entry(e))
@@ -93,7 +92,7 @@ fn process_sins_slot(
         if i == 0 {
             transfer_cms(usb, &mut entry, &entry_name).with_context(|| format!("Failed to transfer '{entry_name}' cms"))?;
         } else {
-            info!("Uploading sparse chunk {}", entry_name);
+            debug!("Uploading sparse chunk {}", entry_name);
             usb.download_tar_entry(&mut entry).with_context(|| format!("Failed to transfer '{entry_name}' chunk {i}"))?;
 
             // erase partition
@@ -110,28 +109,10 @@ fn process_sins_slot(
 
             /* Oreo changed partition image name, so this is a quick fix */
             if fb_end_cmd == "Repartition" && flash_prefix.starts_with("partitionimage_") {
-                let command = flash_prefix.replace("partitionimage_", "Repartition:");
-                debug!("    {command}");
-                usb.write_and_expect_reply(command.as_bytes(), FastbootHeader::Okay)?;
-                debug!("    OKAY");
+                let cmd = flash_prefix.replace("partitionimage_", "Repartition:");
+                debug!("{cmd}");
+                usb.command_expect(&cmd, FastbootHeader::Okay)?;
             } else {
-/*                if flash_both_slots {
-                    flash_entry(usb, fb_end_cmd, &flash_prefix, Some(target_slot))?;
-                    // TODO: command not authenticated??
-                    flash_entry(usb, fb_end_cmd, &flash_prefix, Some(target_slot.other()))?;
-                } else*/
-                // TODO: literally the same as erasing
-/*
-                if has_slot {
-                    let slot = match other {
-                        true => target_slot.other(),
-                        false => target_slot
-                    };
-                    flash_entry(usb, fb_end_cmd, &flash_prefix, Some(slot)).with_context(|| format!("Chunk {i}"))?;
-                } else {
-                    flash_entry(usb, fb_end_cmd, &flash_prefix, None).with_context(|| format!("Chunk {i}"))?;
-                }
-*/
                 let cmd = match (has_slot, other) {
                     (false, _) => format!("{fb_end_cmd}:{flash_prefix}"),
                     (true, false) => format!("{fb_end_cmd}:{flash_prefix}_{target_slot}"),
@@ -145,22 +126,6 @@ fn process_sins_slot(
     }
 
     progress.okay();
-
-    Ok(())
-}
-
-
-
-fn flash_entry(usb: &mut FastbootDevice, fb_end_cmd: &str, flash_prefix: &str, target: Option<Slot>) -> anyhow::Result<()> {
-    let command = match target {
-        Some(slot) => format!("{fb_end_cmd}:{flash_prefix}_{slot}"),
-        None => format!("{fb_end_cmd}:{flash_prefix}")
-    };
-
-    debug!("    {command}");
-    usb.write_and_expect_reply(command.as_bytes(), FastbootHeader::Okay)
-        .with_context(|| format!("Failed to flash '{flash_prefix}' chunk"))?;
-    debug!("    OKAY");
 
     Ok(())
 }

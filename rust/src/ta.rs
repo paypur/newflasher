@@ -1,3 +1,4 @@
+use std::fs;
 use crate::types::{ByteVec, FastbootDevice};
 use anyhow::{Context, anyhow, ensure};
 use log::{debug, info};
@@ -5,6 +6,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::str::FromStr;
+use crate::utils::{is_ta_file, noerase_in_updatexml};
 
 #[derive(PartialEq, Debug)]
 enum TAParseState {
@@ -43,7 +45,7 @@ impl TrimArea {
     }
 
     pub fn try_from_file(path: PathBuf) -> anyhow::Result<TrimArea> {
-        info!("Processing {}", path.display());
+        debug!("Processing {}", path.display());
 
         let mut partition = None;
         let mut vec = Vec::<BootConfigUnit>::new();
@@ -76,9 +78,7 @@ impl TrimArea {
                     }
                 },
                 TAParseState::UnitData => {
-                    if trim.len() < 8 {
-                        return Err(anyhow!("Invalid unit!"));
-                    }
+                    ensure!(trim.len() >= 8, "Invalid unit!");
 
                     let unit_hex: ByteVec = trim[0..8].as_bytes().into();
                     let unit = unit_hex.as_hexadecimal()? as usize;
@@ -148,7 +148,7 @@ impl TrimArea {
         Ok(TrimArea::new(path.file_name().unwrap().to_str().unwrap(),partition.context("Partition not found!")?, vec))
     }
 
-    pub fn flash(self, usb: &mut FastbootDevice) -> anyhow::Result<()> {
+    pub fn flash(&self, usb: &mut FastbootDevice) -> anyhow::Result<()> {
         for unit in &self.boot_config_units {
             usb.download(unit.data.as_slice())?;
 
@@ -179,6 +179,19 @@ impl BootConfigUnitBuilder {
     }
 }
 
+pub fn parse_all_files() -> anyhow::Result<Vec<TrimArea>> {
+    let tas = fs::read_dir("./").unwrap()
+                                .filter_map(|entry| is_ta_file(entry))
+                                .filter(|path| !noerase_in_updatexml(path.file_name().unwrap()))
+                                .map(|path| TrimArea::try_from_file(path))
+                                .collect::<Result<Vec<_>, _>>()
+                                .context("All .ta files could not be successfully parsed!")?;
+
+    ensure!(!tas.is_empty(), "No .ta files found!");
+    info!("Found {} .ta files", tas.len());
+
+    Ok(tas)
+}
 
 fn parse_hex_string(hex: &str) -> anyhow::Result<ByteVec> {
     hex.as_bytes()

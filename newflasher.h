@@ -49,6 +49,7 @@ bool fastboot_cmd_ffi(HANDLE handle, const char *cmd, char *reply_buf, size_t re
 bool fastboot_download_ffi(HANDLE handle, const char *data, size_t len);
 uint32_t getvar_u32_ffi(HANDLE handle, const char *cmd, uint32_t fallback);
 
+bool process_sins_ffi(HANDLE device_ptr, const char *filename, const char* endcommand);
 
 struct TrimArea {
 	uint8_t partition;
