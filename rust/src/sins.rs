@@ -36,10 +36,6 @@ fn process_sins_slot(
     target_slot: Slot,
     flash_both_slots: bool,
 ) -> anyhow::Result<()> {
-    if !fb_end_cmd.is_ascii() {
-        panic!();
-    }
-
     // TODO: move to main
     let mut keep_userdata: bool = true;
 
@@ -90,7 +86,7 @@ fn process_sins_slot(
         let other = sin_path.to_string_lossy().contains("_other");
 
         if i == 0 {
-            transfer_cms(usb, &mut entry, &entry_name).with_context(|| format!("Failed to transfer '{entry_name}' cms"))?;
+            download_cms(usb, &mut entry, &entry_name).with_context(|| format!("Failed to transfer '{entry_name}' cms"))?;
         } else {
             debug!("Uploading sparse chunk {}", entry_name);
             usb.download_tar_entry(&mut entry).with_context(|| format!("Failed to transfer '{entry_name}' chunk {i}"))?;
@@ -184,11 +180,11 @@ fn filter_entry(entry: &Entry<Box<dyn Read>>) -> bool {
     }
 }
 
-fn transfer_cms(usb: &mut FastbootDevice, entry: &mut Entry<Box<dyn Read>>, entry_name: &str) -> anyhow::Result<()> {
+fn download_cms(usb: &mut FastbootDevice, entry: &mut Entry<Box<dyn Read>>, entry_name: &str) -> anyhow::Result<()> {
     let mut is_2021_device: bool = false;
 
     let hex_len = ByteVec::from_len(entry.size() as usize);
-    info!("Uploading signature {entry_name}");
+    info!("Downloading signature {entry_name}");
 
     let cstr = CStr::from_bytes_until_nul(&entry.header().as_ustar().unwrap().name)?.to_string_lossy();
     ensure!(cstr == entry_name, "Invalid cms string!");
@@ -196,14 +192,14 @@ fn transfer_cms(usb: &mut FastbootDevice, entry: &mut Entry<Box<dyn Read>>, entr
     let cmd = format!("signature:{hex_len}");
     debug!("  {cmd}");
 
-    if usb.write_and_read_reply(cmd.as_bytes()).context("Error writing signature command!")? == FastbootHeader::Fail {
+    if usb.write_and_read_reply(cmd).context("Error writing signature command!")? == FastbootHeader::Fail {
         is_2021_device = true;
         info!("device from 2021 and up?");
 
         let cmd = format!("download:{hex_len}");
         debug!("  {cmd}");
 
-        usb.write_and_read_reply(cmd.as_bytes()).context("Error writing signature command!")?;
+        usb.write_and_read_reply(cmd).context("Error writing signature command!")?;
     }
 
     ensure!(hex_len == usb.reply, format!("Invalid DATA reply string, Expected {hex_len}, received {}", usb.reply));
@@ -220,11 +216,8 @@ fn transfer_cms(usb: &mut FastbootDevice, entry: &mut Entry<Box<dyn Read>>, entr
     let header = usb.read_reply()?;
     ensure!(header == FastbootHeader::Okay, format!("Invalid header! Expected OKAY, received: {header:?}"));
 
-    debug!("  OKAY");
-
     if is_2021_device {
         usb.write_and_expect_reply(b"signature", FastbootHeader::Okay)?;
-        debug!("  OKAY");
     }
 
     Ok(())

@@ -67,16 +67,12 @@ pub struct ByteVec {
 }
 
 impl ByteVec {
-    pub fn new() -> Self {
-        Self { data: Vec::new() }
-    }
-
     pub fn append(&mut self, vec: &Self) {
         self.data.extend(vec.as_ref());
     }
 
     pub fn from_len(len: usize) -> Self {
-        ByteVec::from(format!("{:08x}", len))
+        ByteVec::from(format!("{len:08x}"))
     }
 
     pub fn as_decimal(&self) -> Result<u32> {
@@ -284,29 +280,27 @@ impl FastbootDevice {
     }
 
     /// Tries to write a buffer to device
-    pub fn download(&mut self, data: &[u8]) -> Result<()> {
-        let hex_len = ByteVec::from_len(data.len());
-        let cmd = [b"download:", hex_len.as_slice()].concat();
+    pub fn download(&mut self, data: impl AsRef<[u8]>) -> Result<()> {
+        let hex_len = ByteVec::from_len(data.as_ref().len());
+        let cmd = format!("download:{hex_len}");
 
-        self.write_and_expect_reply(&cmd, FastbootHeader::Data)?;
+        self.write_and_expect_reply(cmd, FastbootHeader::Data)?;
         ensure!(hex_len == self.reply, format!("Expected {hex_len}, received {}!", self.reply));
 
-        self.write_and_expect_reply(data, FastbootHeader::Okay).with_context(|| format!("Failed to download data to device:\n {:?}", data))?;
+        self.write_and_expect_reply(data, FastbootHeader::Okay).context("Failed to download data to device!")?;
 
         Ok(())
     }
 
     /// Tries to write tar entry to device
     pub fn download_tar_entry(&mut self, entry: &mut Entry<Box<dyn Read>>) -> Result<()> {
-        // const MiB_2: u64 = 0x100000;
-        const MiB_2: u64 = 104857600;
+        const MiB_2: u64 = 0x200000;
 
         let hex_len = ByteVec::from_len(entry.size() as usize);
-        let mut cmd = ByteVec::from("download:");
-        cmd.append(&hex_len);
+        let cmd = format!("download:{hex_len}");
 
         debug!("{cmd}");
-        self.write_and_expect_reply(&cmd, FastbootHeader::Data)?;
+        self.write_and_expect_reply(cmd, FastbootHeader::Data)?;
         ensure!(hex_len == self.reply, format!("Expected {hex_len}, received {}!", self.reply));
 
         let mut buffer = Vec::<u8>::new();
@@ -320,7 +314,7 @@ impl FastbootDevice {
                 break;
             }
 
-            self.writer.write_all(&buffer).with_context(|| "Failed to download tar entry to device".to_string())?;
+            self.writer.write_all(&buffer).context("Failed to download tar entry to device")?;
             trace!("WRITE[0x{:X}]:skip", buffer.len());
 
             adapter.set_limit(MiB_2);
@@ -334,22 +328,23 @@ impl FastbootDevice {
         Ok(())
     }
 
-    pub fn write_and_read_reply(&mut self, cmd: &[u8]) -> Result<FastbootHeader> {
+    pub fn write_and_read_reply(&mut self, cmd: impl AsRef<[u8]>) -> Result<FastbootHeader> {
         self.write(cmd)?;
         self.read_reply()
     }
 
-    pub fn write_and_expect_reply(&mut self, cmd: &[u8], expected: FastbootHeader) -> Result<()> {
+    pub fn write_and_expect_reply(&mut self, cmd: impl AsRef<[u8]>, expected: FastbootHeader) -> Result<()> {
         let received = self.write_and_read_reply(cmd)?;
         ensure!(received == expected, format!("Expected {expected} header, received {received}: {}", self.reply));
         Ok(())
     }
 
-    pub fn write(&mut self, data: &[u8]) -> Result<usize> {
-        trace_formatted_hex("WRITE", data);
-        self.writer.write_all(data)?;
+    pub fn write(&mut self, data: impl AsRef<[u8]>) -> Result<usize> {
+        let bytes = data.as_ref();
+        trace_formatted_hex("WRITE", bytes);
+        self.writer.write_all(bytes)?;
         self.writer.flush_end()?;
-        Ok(data.len())
+        Ok(bytes.len())
     }
 
     /// Strips reply header from self.reply
