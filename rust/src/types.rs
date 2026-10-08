@@ -9,7 +9,7 @@ use std::time::Duration;
 use std::{mem};
 use std::borrow::Cow;
 use indicatif::{ProgressFinish, ProgressStyle};
-use log::{debug, info};
+use log::{debug, error, info, trace};
 use tar::Entry;
 
 use crate::utils::{trace_formatted_hex};
@@ -36,6 +36,12 @@ impl Slot {
             Slot::A => "a",
             Slot::B => "b"
         }
+    }
+}
+
+impl From<String> for Slot {
+    fn from(value: String) -> Self {
+        value.as_str().into()
     }
 }
 
@@ -229,9 +235,8 @@ impl FastbootDevice {
         self.command_expect(cmd.as_str(), FastbootHeader::Okay)
     }
 
-    pub fn command(&mut self, cmd: &str) -> Result<()> {
-        self.write_and_read_reply(cmd.as_bytes()).with_context(|| format!("Fastboot command {cmd} failed!"))?;
-        Ok(())
+    pub fn command(&mut self, cmd: &str) -> Result<FastbootHeader> {
+        self.write_and_read_reply(cmd.as_bytes()).with_context(|| format!("Fastboot command {cmd} failed!"))
     }
 
     pub fn command_expect(&mut self, cmd: &str, expected: FastbootHeader) -> Result<()> {
@@ -268,17 +273,14 @@ impl FastbootDevice {
         body().with_context(|| format!("Fastboot command {cmd} failed!"))
     }
 
-    pub fn getvar_u32(&mut self, cmd: &str, default: u32) -> u32 {
-        match self.write_and_read_reply(cmd.as_bytes()).with_context(|| format!("Fastboot command {cmd} failed!")) {
-            Ok(header) => if header == FastbootHeader::Okay {
-                return self.reply.as_decimal().unwrap_or_else(|e| {
-                    error!("{}", e);
-                    default
-                });
-            },
-            Err(e) => error!("{}", e)
-        }
-        default
+    pub fn getvar_u32(&mut self, cmd: &str) -> Result<u32> {
+        self.command(cmd)?;
+        self.reply.as_decimal()
+    }
+
+    pub fn getvar_string(&mut self, cmd: &str) -> Result<String> {
+        self.command(cmd)?;
+        String::from_utf8(self.reply.clone()).with_context(|| format!("Failed to parse {} as str", self.reply))
     }
 
     /// Tries to write a buffer to device
@@ -296,6 +298,9 @@ impl FastbootDevice {
 
     /// Tries to write tar entry to device
     pub fn download_tar_entry(&mut self, entry: &mut Entry<Box<dyn Read>>) -> Result<()> {
+        // const MiB_2: u64 = 0x100000;
+        const MiB_2: u64 = 104857600;
+
         let hex_len = ByteVec::from_len(entry.size() as usize);
         let mut cmd = ByteVec::from("download:");
         cmd.append(&hex_len);
@@ -304,29 +309,22 @@ impl FastbootDevice {
         self.write_and_expect_reply(&cmd, FastbootHeader::Data)?;
         ensure!(hex_len == self.reply, format!("Expected {hex_len}, received {}!", self.reply));
 
-        // TODO: fix this for real
-        // if entry.size() >= 0x10 && entry.size() < 0x200000 {
-        //     // copy doesn't need to be flushed
-        //     std::io::copy(entry, &mut self.writer).with_context(|| format!("Failed to download tar entry to device: {:?}", entry.header()))?;
-        //     trace!("WRITE:\nskipped {} bytes", entry.size());
-        // } else {
-            let mut buffer = Vec::<u8>::new();
-            let mut adapter = entry.take(0x200000); // 2MiB
+        let mut buffer = Vec::<u8>::new();
+        let mut adapter = entry.take(MiB_2);
 
-            loop {
-                buffer.clear();
-                adapter.read_to_end(&mut buffer)?;
+        loop {
+            buffer.clear();
+            adapter.read_to_end(&mut buffer)?;
 
-                if buffer.is_empty() {
-                    break;
-                }
-
-                self.writer.write_all(&buffer).with_context(|| "Failed to download tar entry to device".to_string())?;
-                trace!("WRITE:\nskipped {} bytes", buffer.len());
-
-                adapter.set_limit(0x200000);
+            if buffer.is_empty() {
+                break;
             }
-        // }
+
+            self.writer.write_all(&buffer).with_context(|| "Failed to download tar entry to device".to_string())?;
+            trace!("WRITE[0x{:X}]:skip", buffer.len());
+
+            adapter.set_limit(MiB_2);
+        }
 
         self.writer.flush()?;
 
@@ -352,11 +350,6 @@ impl FastbootDevice {
         self.writer.write_all(data)?;
         self.writer.flush_end()?;
         Ok(data.len())
-    }
-
-    pub fn getvar_string(&mut self, cmd: &str) -> Result<String> {
-        self.command(cmd)?;
-        Ok(String::from_utf8(self.reply.as_ref().clone()).expect(&format!("Failed to parse {} as str", self.reply)))
     }
 
     /// Strips reply header from self.reply

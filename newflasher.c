@@ -198,7 +198,7 @@ static char s1_root[64];
 static char sake_root[16];
 static char get_root_key_hash[0x61];
 static char slot_count[2];
-static char current_slot[2];
+char current_slot[2] = {0};
 static char remember_current_slot[2];
 
 static unsigned int something_flashed = 0;
@@ -1304,6 +1304,8 @@ static void check_in_updatexml(char *updatexml_file, char *searchfor)
 
 static int process_sins(HANDLE dev, FILE *a, char *filename, char *full_path, char *outfolder, char *endcommand)
 {
+	// printf("filename %s, full_path %s, outfolder %s, endcommand %s\n", filename, full_path, outfolder, endcommand);
+	// return 1;
 	char buff[512];
 	FILE *f = NULL;
 	size_t bytes_read;
@@ -1474,14 +1476,16 @@ repeat_here:
 				return 0;
 			}
 
-			if (!get_reply_ffi(dev)) {
+			enum FastbootHeader h = get_reply_ffi(dev);
+
+			if (!h) {
 				printf("      Error, no signature DATA reply!\n");
 				return 0;
 			}
 
-			if (strlen(dev->vec.ptr) != 12)
+			if (dev->vec.len != 8)
 			{
-				if (memcmp(dev->vec.ptr, "FAIL", 4) == 0 && !is_2021_device)
+				if (h == FR_FAIL && !is_2021_device)
 				{
 					printf("      device from 2021 and up?\n");
 					is_2021_device = true;
@@ -1497,7 +1501,7 @@ repeat_here:
 
 			if (is_2021_device)
 			{
-				if (memcmp(dev->vec.ptr+4, command+9, 8) != 0)
+				if (memcmp(dev->vec.ptr, command+9, 8) != 0)
 				{
 					printf("      Error, signature DATA reply string: %s is not equal to expected: DATA%s!\n", dev->vec.ptr, command+10);
 					return 0;
@@ -1505,7 +1509,7 @@ repeat_here:
 			}
 			else
 			{
-				if (memcmp(dev->vec.ptr+4, command+10, 8) != 0)
+				if (memcmp(dev->vec.ptr, command+10, 8) != 0)
 				{
 					printf("      Error, signature DATA reply string: %s is not equal to expected: DATA%s!\n", dev->vec.ptr, command+10);
 					return 0;
@@ -1541,24 +1545,14 @@ repeat_here:
 
 			if (buffer) free(buffer);
 
-			if (!get_reply_ffi(dev)) {
+			h = get_reply_ffi(dev);
+
+			if (h != FR_OKAY) {
 				printf("      Error, no sinature OKAY reply!\n");
 				return 0;
 			}
 
-			if (strlen(dev->vec.ptr) < 4) {
-				printf("      Error, signature reply less than 4, got: %zu bytes!\n", strlen(dev->vec.ptr));
-				return 0;
-			}
-
-			if (memcmp(dev->vec.ptr, "OKAY", 4) == 0) {
-				printf("      OKAY.\n");
-			}
-			else
-			{
-				printf("      Error, didn't got signature OKAY reply! Got reply: %s\n", dev->vec.ptr);
-				return 0;
-			}
+			printf("      OKAY.\n");
 
 			if (is_2021_device)
 			{
@@ -1571,21 +1565,13 @@ repeat_here:
 					return 0;
 				}
 
-				if (!get_reply_ffi(dev))
+				if (get_reply_ffi(dev) != FR_OKAY)
 				{
 					printf("      Error, no signature OKAY reply!\n");
 					return 0;
 				}
 
-				if (memcmp(dev->vec.ptr, "OKAY", 4) != 0)
-				{
-					printf("      Error, signature OKAY reply, got reply: %s!\n", dev->vec.ptr);
-					return 0;
-				}
-				else
-				{
-					printf("      OKAY.\n");
-				}
+				printf("      OKAY.\n");
 			}
 		}
 		else
@@ -1618,12 +1604,12 @@ repeat_here:
 				return 0;
 			}
 
-			if (strlen(dev->vec.ptr) != 12) {
-				printf("      Error, download DATA reply size: %zu less than expected: 12!\n", strlen(dev->vec.ptr));
+			if (dev->vec.len != 8) {
+				printf("      Error, download DATA reply size: %zu less than expected: 8!\n", dev->vec.len);
 				return 0;
 			}
 
-			if (memcmp(dev->vec.ptr+4, command+9, 8) != 0) {
+			if (memcmp(dev->vec.ptr, command+9, 8) != 0) {
 				printf("      Error, download DATA reply string: %s is not equal to expected: DATA%s!\n", dev->vec.ptr, command+9);
 				return 0;
 			}
@@ -1681,18 +1667,8 @@ repeat_here:
 
 			fclose(fp);
 
-			if (!get_reply_ffi(dev)) {
+			if (get_reply_ffi(dev) != FR_OKAY) {
 				printf("      Error, no download OKAY reply!\n");
-				return 0;
-			}
-
-			if (strlen(dev->vec.ptr) < 4) {
-				printf("      Error, download reply less than 4, got: %zu bytes!\n", strlen(dev->vec.ptr));
-				return 0;
-			}
-
-			if (memcmp(dev->vec.ptr, "OKAY", 4) != 0) {
-				printf("      Error, didn't got download OKAY reply! Got reply: %s\n", dev->vec.ptr);
 				return 0;
 			}
 
@@ -1758,18 +1734,8 @@ repeat_here:
 						return 0;
 					}
 
-					if (!get_reply_ffi(dev)) {
+					if (get_reply_ffi(dev) != FR_OKAY) {
 						printf("      Error, no erase OKAY reply!\n");
-						return 0;
-					}
-
-					if (strlen(dev->vec.ptr) < 4) {
-						printf("      Error, erase reply less than 4, got: %zu bytes!\n", strlen(dev->vec.ptr));
-						return 0;
-					}
-
-					if (memcmp(dev->vec.ptr, "OKAY", 4) != 0) {
-						printf("      Error, didn't got erase OKAY reply! Got reply: %s\n", dev->vec.ptr);
 						return 0;
 					}
 
@@ -1820,18 +1786,8 @@ repeat_here:
 				return 0;
 			}
 
-			if (!get_reply_ffi(dev)) {
+			if (get_reply_ffi(dev) != FR_OKAY) {
 				printf("      Error, no %s OKAY reply!\n", endcommand);
-				return 0;
-			}
-
-			if (strlen(dev->vec.ptr) < 4) {
-				printf("      Error, %s reply less than 4, got: %zu bytes!\n", endcommand, strlen(dev->vec.ptr));
-				return 0;
-			}
-
-			if (memcmp(dev->vec.ptr, "OKAY", 4) != 0) {
-				printf("      Error, didn't got %s OKAY reply! Got reply: %s\n", endcommand, dev->vec.ptr);
 				return 0;
 			}
 
@@ -2337,13 +2293,13 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 							goto finish_proced_ta;
 						}
 
-						if (strlen(dev->vec.ptr) != 12) {
-							printf("      Error, download DATA reply size: %zu less than expected: 12!\n", strlen(dev->vec.ptr));
+						if (dev->vec.len != 8) {
+							printf("      Error, download DATA reply size: %zu less than expected: 12!\n", dev->vec.len);
 							ret = 0;
 							goto finish_proced_ta;
 						}
 
-						if (memcmp(dev->vec.ptr+4, command+9, 8) != 0) {
+						if (memcmp(dev->vec.ptr, command+9, 8) != 0) {
 							printf("      Error, download DATA reply string: %s is not equal to expected: DATA%s!\n", dev->vec.ptr, command+9);
 							ret = 0;
 							goto finish_proced_ta;
@@ -2364,17 +2320,17 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 							goto finish_proced_ta;
 						}
 
-						if (strlen(dev->vec.ptr) < 4) {
-							printf("      Error, reply less than 4, got: %zu bytes!\n", strlen(dev->vec.ptr));
-							ret = 0;
-							goto finish_proced_ta;
-						}
-
-						if (memcmp(dev->vec.ptr, "OKAY", 4) != 0) {
-							printf("      Error, didn't got OKAY reply! Got reply: %s\n", dev->vec.ptr);
-							ret = 0;
-							goto finish_proced_ta;
-						}
+						// if (strlen(dev->vec.ptr) < 4) {
+						// 	printf("      Error, reply less than 4, got: %zu bytes!\n", strlen(dev->vec.ptr));
+						// 	ret = 0;
+						// 	goto finish_proced_ta;
+						// }
+						//
+						// if (memcmp(dev->vec.ptr, "OKAY", 4) != 0) {
+						// 	printf("      Error, didn't got OKAY reply! Got reply: %s\n", dev->vec.ptr);
+						// 	ret = 0;
+						// 	goto finish_proced_ta;
+						// }
 
 						printf("      OKAY.\n");
 
@@ -2393,17 +2349,17 @@ static int proced_ta_file(char *ta_file, HANDLE dev)
 							goto finish_proced_ta;
 						}
 
-						if (strlen(dev->vec.ptr) < 4) {
-							printf("      Error, reply less than 4, got: %zu bytes!\n", strlen(dev->vec.ptr));
-							ret = 0;
-							goto finish_proced_ta;
-						}
-
-						if (memcmp(dev->vec.ptr, "OKAY", 4) != 0) {
-							printf("      Error, didn't got OKAY reply! Got reply: %s\n", dev->vec.ptr);
-							ret = 0;
-							goto finish_proced_ta;
-						}
+						// if (strlen(dev->vec.ptr) < 4) {
+						// 	printf("      Error, reply less than 4, got: %zu bytes!\n", strlen(dev->vec.ptr));
+						// 	ret = 0;
+						// 	goto finish_proced_ta;
+						// }
+						//
+						// if (memcmp(dev->vec.ptr, "OKAY", 4) != 0) {
+						// 	printf("      Error, didn't got OKAY reply! Got reply: %s\n", dev->vec.ptr);
+						// 	ret = 0;
+						// 	goto finish_proced_ta;
+						// }
 
 						printf("      OKAY.\n");
 
@@ -2565,7 +2521,6 @@ int main(int argc, char *argv[])
 	memset(slot_count, 0x30, sizeof(slot_count));
 	memset(current_slot, 0x30, sizeof(current_slot));
 
-	goto skip;
 
 /*========================================  extract GordonGate  ======================================*/
 #ifdef _WIN32
@@ -2806,450 +2761,26 @@ int main(int argc, char *argv[])
 		ret = 1;
 		goto pauza;
 	}
+
+
 #endif
 #endif
 
 /*========================================  keep userdata?  ======================================*/
 
-	/* search for update.xml */
-#ifdef _WIN32
-	snprintf(sinfil, sizeof(sinfil), "%s\\update.xml", working_path);
-#else
-	snprintf(sinfil, sizeof(sinfil), "./update.xml");
-#endif
-
-	if (!file_exist(sinfil))
-	{
-		printf("\nupdate.xml not exist in current folder!\n");
-	}
-	else
-	{
-		// printf("\nDo you want to keep userdata? Type 'y' and press ENTER to confirm, or type 'n' to erase userdata.\n");
-		// if (scanf(" %c", &ch)) { }
-		// if (ch == 'y' || ch == 'Y')
-		// {
-		// 	keep_userdata = true;
-		// }
-	}
-
+	// TODO: removed
 
 /*============================================  reboot mode ==========================================*/
 
-	if (argc < 2)
-	{
-		printf("\nReboot mode at the end of flashing:\n  type 'a' for reboot to android, type 'f' for reboot to fastboot, type 'd' for reboot to fastbootd, type 'r' for reboot to recovery, type 's' for reboot to same mode, type 'p' for poweroff, and press ENTER.\n");
-		if (scanf(" %c", &ch)) { }
-		switch(ch)
-		{
-			case 'a':
-			case 'A':
-				reboot_mode = 1; /* android */
-				break;
-
-			case 'f':
-			case 'F':
-				reboot_mode = 2; /* fastboot */
-				break;
-
-			case 'd':
-			case 'D':
-				reboot_mode = 3; /* fastbootd */
-				break;
-
-			case 'r':
-			case 'R':
-				reboot_mode = 4; /* recovery */
-				break;
-
-			case 's':
-			case 'S':
-				reboot_mode = 5; /* flashmode */
-				break;
-
-			case 'p':
-			case 'P':
-			default:
-				reboot_mode = 0; /* power off */
-				break;
-		}
-	}
+	// TODO: removed
 
 /*======================================= commands from script =======================================*/
 
-	/* TODO:
-	if (argc > 1)
-	{
-		if (transfer_bulk_ffi(dev, EP_OUT, argv[1], strlen(argv[1]), 1) < 1)
-		{
-			printf("Error writing commad: %s\n", argv[1]);
-			ret = 1;
-			goto endflashing;
-		}
-		else
-		{
-			printf("Writing command: %s\n", argv[1]);
-
-			if (!get_reply(dev, tmp_reply, 0))
-			{
-				printf("Error, null reply\n");
-				ret = 1;
-				goto endflashing;
-			}
-			else
-			{
-				display_buffer_hex_ascii("got first reply", tmp_reply, dev->vec.len);
-
-				if (memcmp(dev->vec.ptr, "FAIL", 4) == 0)
-				{
-					printf("got fail reply: %s\n", dev->vec.ptr);
-					ret = 1;
-					goto endflashing;
-				}
-				else
-				{
-					if (memcmp(dev->vec.ptr, "DATA", 4) == 0)
-					{
-						unsigned int data_len = 0;
-
-						if (dev->vec.len != 12) {
-							printf("Errornous DATA reply!\n");
-							display_buffer_hex_ascii("replied", tmp_reply, dev->vec.len);
-							ret = 1;
-							goto endflashing;
-						}
-
-						sscanf(dev->vec.ptr+4, "%08x", &data_len);
-
-						if (!data_len)
-						{
-							printf("got null data_len!\n");
-
-							if (!get_reply(dev, tmp_reply, 0))
-							{
-								printf("Error retrieving seccond reply!\n");
-								ret = 1;
-								goto endflashing;
-							}
-
-							display_buffer_hex_ascii("got last reply", tmp_reply, dev->vec.len);
-
-							if (strstr(dev->vec.ptr, "OKAY") == NULL)
-							{
-								printf("Error, no OKAY reply!\n");
-								display_buffer_hex_ascii("got reply", tmp_reply, dev->vec.len);
-								ret = 1;
-								goto endflashing;
-							}
-						}
-						else
-						{
-							char *data_buf = NULL;
-
-							if ((data_buf = (char *)malloc(data_len)) == NULL)
-							{
-								printf("error allocating 0x%x bytes!\n", data_len);
-								ret = 1;
-								goto endflashing;
-							}
-
-							if (!get_reply(dev, EP_IN, data_buf, data_len, USB_TIMEOUT, 1))
-							{
-								printf("Error retrieving data!\n");
-								free(data_buf);
-								ret = 1;
-								goto endflashing;
-							}
-
-							display_buffer_hex_ascii("data_buf", data_buf, data_len);
-
-							// sometimes OKAY reply is inside data buffer
-							if (data_len >= 4 && data_buf[data_len - 4] == 'O' && data_buf[data_len - 3] == 'K' && data_buf[data_len - 2] == 'A' && data_buf[data_len - 1] == 'Y')
-							{
-								data_len -= 4;
-							}
-							else
-							{
-								if (!get_reply(dev, EP_IN, tmp, 5, USB_TIMEOUT, 0))
-								{
-									printf("Error retrieving OKAY reply!\n");
-									free(data_buf);
-									ret = 1;
-									goto endflashing;
-								}
-
-								if (strstr(dev->vec.ptr, "OKAY") == NULL)
-								{
-									printf("Error, no OKAY reply!\n");
-									free(data_buf);
-									ret = 1;
-									goto endflashing;
-								}
-							}
-
-							FILE *dumpme = NULL;
-							display_buffer_hex_ascii("replied", tmp_reply, dev->vec.len);
-							if ((dumpme = fopen64("dump.bin", "wb")) == NULL)
-							{
-								printf("dump.bin will not be created!\n");
-							}
-							else
-							{
-								fwrite(data_buf, 1, data_len, dumpme);
-								fclose(dumpme);
-								printf("dump.bin created.\n");
-							}
-
-							free(data_buf);
-						}
-					}
-				}
-			}
-		}
-
-		goto endflashing;
-	}
-	*/
+	// TODO: removed
 
 /*==========================================  dump trim area  ========================================*/
 
-	/* TODO:
-	printf("\nOptional step! Type 'y' and press ENTER if you want dump trim area, or type 'n' and press ENTER to skip.\n");
-	printf("Do in mind this doesn't dump drm key since sake authentifiction is need for that! But it is recommend to have dump in case hard brick!\n");
-	if (scanf(" %c", &ch)) { }
-
-	if (ch == 'y' || ch == 'Y')
-	{
-		for (i=1; i <= 2; ++i)
-		{
-			snprintf(tmp, sizeof(tmp), "Read-all-TA:%d", i);
-
-			if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp), 1) < 1)
-			{
-				printf("Error dumping trimarea partition %d !!\n", i);
-				ret = 1;
-				goto endflashing;
-			}
-			else
-			{
-				printf("Dumping trimarea partition %d.\n", i);
-
-				if (!get_reply(dev, tmp_reply, 0))
-				{
-					printf("Error, null reply\n");
-					ret = 1;
-					goto endflashing;
-				}
-				else
-				{
-					//display_buffer_hex_ascii("got first reply", tmp_reply, dev->vec.len);
-
-					if (memcmp(dev->vec.ptr, "FAIL", 4) == 0)
-					{
-						printf("got fail reply: %s\n", dev->vec.ptr);
-						ret = 1;
-						goto endflashing;
-					}
-					else
-					{
-						if (memcmp(dev->vec.ptr, "DATA", 4) == 0)
-						{
-							unsigned int data_len = 0;
-
-							if (dev->vec.len != 12)
-							{
-								printf("Errornous DATA reply!\n");
-								display_buffer_hex_ascii("replied", tmp_reply, dev->vec.len);
-								ret = 1;
-								goto endflashing;
-							}
-
-							sscanf(dev->vec.ptr+4, "%08x", &data_len);
-
-							if (!data_len)
-							{
-								printf("got null data_len!\n");
-
-								if (!get_reply(dev, tmp_reply, 0))
-								{
-									printf("Error retrieving seccond reply!\n");
-									ret = 1;
-									goto endflashing;
-								}
-
-								//display_buffer_hex_ascii("got last reply", tmp_reply, dev->vec.len);
-
-								if (strstr(dev->vec.ptr, "OKAY") == NULL)
-								{
-									printf("Error, no OKAY reply!\n");
-									display_buffer_hex_ascii("got reply", tmp_reply, dev->vec.len);
-									ret = 1;
-									goto endflashing;
-								}
-							}
-							else
-							{
-								char *data_buf = NULL;
-
-								if (data_len > BUFF_MAX)
-								{
-									printf("Bug!!! DATA_LEN: 0x%x > BUFF_MAX: 0x%x\n", data_len, BUFF_MAX);
-									ret = 1;
-									goto endflashing;
-								}
-
-								if ((data_buf = (char *)malloc(data_len)) == NULL)
-								{
-									printf("error allocating 0x%x bytes!\n", data_len);
-									ret = 1;
-									goto endflashing;
-								}
-
-								if (!get_reply(dev, EP_IN, data_buf, data_len, USB_TIMEOUT, 1))
-								{
-									printf("Error retrieving data!\n");
-									free(data_buf);
-									ret = 1;
-									goto endflashing;
-								}
-
-								//display_buffer_hex_ascii("data_buf", data_buf, data_len);
-
-								// sometimes OKAY reply is inside data buffer
-								if (data_len >= 4 && data_buf[data_len - 4] == 'O' && data_buf[data_len - 3] == 'K' && data_buf[data_len - 2] == 'A' && data_buf[data_len - 1] == 'Y')
-								{
-									data_len -= 4;
-								}
-								else
-								{
-									if (!get_reply(dev, EP_IN, tmp, 5, USB_TIMEOUT, 0))
-									{
-										printf("Error retrieving OKAY reply!\n");
-										free(data_buf);
-										ret = 1;
-										goto endflashing;
-									}
-
-									if (strstr(dev->vec.ptr, "OKAY") == NULL)
-									{
-										printf("Error, no OKAY reply!\n");
-										free(data_buf);
-										ret = 1;
-										goto endflashing;
-									}
-								}
-
-								FILE *dumpme = NULL;
-
-								snprintf(fld, sizeof(fld), "tadump/");
-								if (0 != access(fld, F_OK))
-								{
-									if (ENOENT == errno)
-									{
-#ifdef _WIN32
-										fld_cbck = mkdir("tadump");
-#else
-										fld_cbck = mkdir("tadump", 0755);
-#endif
-										if (fld_cbck == 0)
-										{
-											printf("Created ouput folder tadump.\n");
-										}
-										else
-										{
-											printf("FAILURE to create output folder tadump!\n");
-											free(data_buf);
-											ret = 1;
-											goto endflashing;
-										}
-									}
-
-									if (ENOTDIR == errno)
-									{
-										printf("FAILURE to create output folder tadump because there is file called tadump!!\n"
-											"Remove or rename file tadump first!\n");
-										free(data_buf);
-										ret = 1;
-										goto endflashing;
-									}
-
-								}
-								else
-								{
-									printf("Dumping trim area to tadump folder.\n");
-								}
-#ifdef _WIN32
-								snprintf(tmp, sizeof(tmp), "%s\\tadump\\tadump_%d.ta", working_path, i);
-#else
-								snprintf(tmp, sizeof(tmp), "./tadump/tadump_%d.ta", i);
-#endif
-								//display_buffer_hex_ascii("replied", tmp_reply, dev->vec.len);
-
-								if ((dumpme = fopen64(tmp, "wb")) == NULL)
-								{
-									printf("%s will not be created!\n", tmp);
-								}
-								else
-								{
-									unsigned int x = 0;
-									unsigned int y;
-									unsigned int unitt_sz;
-
-									fprintf(dumpme, "//created with %s v%d by Munjeni @ 2017/2023\n", progname, VERSION);
-
-									if (i == 1)
-										fprintf(dumpme, "//trim partition\n01\n\n");
-									else
-										fprintf(dumpme, "//misc partition\n02\n\n");
-
-									while(x < data_len)
-									{
-										for (y=0; y < 4; ++y)
-										{
-											memcpy(tmp_reply+y, data_buf+x+y, 1);
-											fprintf(dumpme, "%02X", tmp_reply[y] & 0xff);
-										}
-
-										fprintf(dumpme, " ");
-
-										x += 4;
-
-										unitt_sz = 0;
-										memcpy(&unitt_sz, data_buf+x, 4);
-										unitt_sz = swap_uint32(unitt_sz);
-										if (unitt_sz > 0xffff)
-											fprintf(dumpme, "%08X ", unitt_sz);
-										else
-											fprintf(dumpme, "%04X ", unitt_sz & 0xffff);
-
-										x += 4;
-
-										for (y=0; y < unitt_sz; ++y)
-										{
-											memcpy(tmp_reply+y, data_buf+x+y, 1);
-											fprintf(dumpme, "%02X ", tmp_reply[y] & 0xff);
-										}
-
-										fprintf(dumpme, "\n\n");
-
-										x += unitt_sz;
-									}
-
-									fclose(dumpme);
-									printf("%s created.\n", tmp);
-								}
-
-								free(data_buf);
-							}
-						}
-					}
-				}
-			}
-		}
-
-		memset(tmp_reply, 0, BUFF_MAX);
-		goto endflashing;
-	}
-	*/
+	// TODO: removed
 
 /*=========================================  DEVICE INFO  ============================================*/
 
@@ -3347,7 +2878,8 @@ int main(int argc, char *argv[])
 	}
 
 	printf("Device is put now in flash mode.\n");
-	skip:
+
+	goto skip;
 /*=======================================  process partition  ========================================*/
 
 	printf("\n");
@@ -3396,93 +2928,37 @@ int main(int argc, char *argv[])
 			snprintf(tmp, sizeof(tmp), "%s", have_ufs ? "Get-ufs-info" : "Get-emmc-info");
 
 
-			if (transfer_bulk_ffi(dev, EP_OUT, tmp, strlen(tmp)) < 1)
-			{
+			if (!get_data_ffi(dev, tmp)) {
 				printf(" - Error writing command %s!\n", tmp);
 				ret = 1;
 				goto getoutofflashing;
 			}
 			else
 			{
-				if (!get_reply_ffi(dev))
+				if (have_ufs)
 				{
-					ret = 1;
-					goto getoutofflashing;
-				}
+					unsigned char ufs_desc_sz = 0;
 
-				if (memcmp(dev->vec.ptr, "DATA", 4) != 0)
-				{
-					printf(" - Error, no DATA reply!\n");
-					ret = 1;
-					goto getoutofflashing;
-				}
+					display_buffer_hex_ascii("UFS raw data", dev->vec.ptr, dev->vec.len);
 
-				if (!get_reply_ffi(dev))
-				{
-					ret = 1;
-					goto getoutofflashing;
-				}
+					memcpy(&ufs_desc_sz, dev->vec.ptr, 1);
+					memcpy(&lun0_sz, dev->vec.ptr + ufs_desc_sz + 0x1c, 4);
 
-				if (dev->vec.len <= 0)
-				{
-					printf("Error receiving %s header!\n", have_ufs ? "UFS" : "EMMC");
-					ret = 1;
-					goto getoutofflashing;
+					lun0_sz = swap_uint32(lun0_sz);
+					lun0_sz *= sector_size;
+					lun0_sz /= 1024;
 				}
 				else
 				{
-					if (have_ufs)
-					{
-						unsigned char ufs_desc_sz = 0;
+					display_buffer_hex_ascii("EMMC raw data", dev->vec.ptr, dev->vec.len);
 
-						display_buffer_hex_ascii("UFS raw data", dev->vec.ptr, dev->vec.len);
+					memcpy(&lun0_sz, dev->vec.ptr + 0xd4, 4);
 
-						memcpy(dev->vec.ptr, "OKAYKIOXIA,THGJFLT1E45BATPB,0100", 33);
-
-						memcpy(&ufs_desc_sz, dev->vec.ptr, 1);
-						memcpy(&lun0_sz, dev->vec.ptr + ufs_desc_sz + 0x1c, 4);
-
-						lun0_sz = swap_uint32(lun0_sz);
-						lun0_sz *= sector_size;
-						lun0_sz /= 1024;
-					}
-					else
-					{
-						display_buffer_hex_ascii("EMMC raw data", dev->vec.ptr, dev->vec.len);
-
-						memcpy(&lun0_sz, dev->vec.ptr + 0xd4, 4);
-
-						lun0_sz *= sector_size;
-						lun0_sz /= 1024;
-					}
-
-					printf("%s size = %llu\n", have_ufs ? "LUN0" : "EMMC part 0", lun0_sz);
+					lun0_sz *= sector_size;
+					lun0_sz /= 1024;
 				}
 
-				// sometimes OKAY reply is inside data buffer
-				if (dev->vec.len >= 4 && dev->vec.ptr[dev->vec.len - 4] == 'O' && dev->vec.ptr[dev->vec.len - 3] == 'K' && dev->vec.ptr[dev->vec.len - 2] == 'A' && dev->vec.ptr[dev->vec.len - 1] == 'Y')
-				{
-					dev->vec.len -= 4;
-					okay_replied = true;
-				}
-
-				if (!okay_replied)
-				{
-					if (!get_reply_ffi(dev))
-					{
-						ret = 1;
-						goto getoutofflashing;
-					}
-
-					if (memcmp(dev->vec.ptr, "OKAY", 4) != 0)
-					{
-						printf(" - Error, no OKAY reply!\n");
-						ret = 1;
-						goto getoutofflashing;
-					}
-				}
-
-				okay_replied = false;
+				printf("%s size = %llu\n", have_ufs ? "LUN0" : "EMMC part 0", lun0_sz);
 			}
 
 
@@ -3554,7 +3030,7 @@ int main(int argc, char *argv[])
 								}
 								else
 								{
-									if (!process_sins(dev, a, sinfil, working_path, "partition", "Repartition"))
+									if (!process_sins_ffi(dev, sinfil, "Repartition"))
 									{
 										fclose(a);
 										remove(fld);
@@ -3578,7 +3054,7 @@ int main(int argc, char *argv[])
 								}
 								else
 								{
-									if (!process_sins(dev, a, sinfil, working_path, "partition", "Repartition"))
+									if (!process_sins_ffi(dev, sinfil, "Repartition"))
 									{
 										fclose(a);
 										remove(fld);
@@ -3666,7 +3142,7 @@ int main(int argc, char *argv[])
 										}
 										else
 										{
-											if (!process_sins(dev, a, sinfil, working_path, "partition", "Repartition"))
+											if (!process_sins_ffi(dev, sinfil, "Repartition"))
 											{
 												fclose(a);
 												remove(fld);
@@ -3690,7 +3166,7 @@ int main(int argc, char *argv[])
 										}
 										else
 										{
-											if (!process_sins(dev, a, sinfil, working_path, "partition", "Repartition"))
+											if (!process_sins_ffi(dev, sinfil, "Repartition"))
 											{
 												fclose(a);
 												remove(fld);
@@ -3805,8 +3281,6 @@ int main(int argc, char *argv[])
 							sin_found = 1;
 							printf("\n");
 							printf("Processing %s\n", ep->d_name);
-
-							goto skip_this;
 #ifdef _WIN32
 							snprintf(sinfil, sizeof(sinfil), "%s\\%s", working_path, ep->d_name);
 #else
@@ -3887,7 +3361,7 @@ int main(int argc, char *argv[])
 														memcpy(current_slot, "a", 1);
 												}
 
-												if (!process_sins(dev, a, sinfil, working_path, "flash_session", "flash"))
+												if (!process_sins_ffi(dev, sinfil, "flash"))
 												{
 													fclose(a);
 													remove(fld);
@@ -3905,7 +3379,7 @@ int main(int argc, char *argv[])
 
 									/*==============================================*/
 
-									if (!process_sins(dev, a, sinfil, working_path, "flash_session", "flash"))
+									if (!process_sins_ffi(dev, sinfil, "flash"))
 									{
 										fclose(a);
 										remove(fld);
@@ -3966,7 +3440,7 @@ int main(int argc, char *argv[])
 														memcpy(current_slot, "a", 1);
 												}
 
-												if (!process_sins(dev, a, sinfil, working_path, "flash_session", "flash"))
+												if (!process_sins_ffi(dev, sinfil, "flash"))
 												{
 													fclose(a);
 													remove(fld);
@@ -3984,7 +3458,7 @@ int main(int argc, char *argv[])
 
 									/*==============================================*/
 
-									if (!process_sins(dev, a, sinfil, working_path, "flash_session", "flash"))
+									if (!process_sins_ffi(dev, sinfil, "flash"))
 									{
 										fclose(a);
 										remove(fld);
@@ -4082,6 +3556,8 @@ skip_this:
 
 /*========================================  boot delivery  ===========================================*/
 
+	skip:
+
 	printf("\n");
 	printf("Processing boot delivery...\n\n");
 #ifdef _WIN32
@@ -4151,6 +3627,7 @@ skip_this:
 					}
 				}
 
+				// xml attributes match
 				if (bootdelivery_found && strstr(bootdelivery_xml[i][1], searchfor) != NULL)
 				{
 					if (j == 2) printf("      Found bootdelivery match: %s\n", bootdelivery_xml[i][0]);
@@ -4223,7 +3700,7 @@ skip_this:
 								}
 								else
 								{
-									if (!process_sins(dev, a, sinfil, working_path, "boot", "flash"))
+									if (!process_sins_ffi(dev, sinfil, "flash"))
 									{
 										fclose(a);
 										remove(fld);
@@ -4246,7 +3723,7 @@ skip_this:
 								}
 								else
 								{
-									if (!process_sins(dev, a, sinfil, working_path, "boot", "flash"))
+									if (!process_sins_ffi(dev, sinfil, "flash"))
 									{
 										fclose(a);
 										remove(fld);
@@ -4569,7 +4046,7 @@ slot_setup:
 		goto endflashing;
 	}
 
-	if (memcmp(dev->vec.ptr+4, "00000001", 8) != 0)
+	if (memcmp(dev->vec.ptr, "00000001", 8) != 0)
 	{
 		printf(" - Error, go_outof_flash_mode DATA reply string: %s is not equal to expected: DATA00000001!\n", dev->vec.ptr);
 		ret = 1;

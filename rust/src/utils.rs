@@ -9,7 +9,7 @@ pub fn trace_formatted_hex(message: &str, buffer: &[u8]) {
     if log_enabled!(Level::Trace) {
         let mut builder = String::with_capacity(0xF00);
 
-        let _ = writeln!(builder, "{}:", message);
+        let _ = writeln!(builder, "{}[0x{:X}]:", message, buffer.len());
 
         buffer.chunks(16)
               .take(64)
@@ -24,9 +24,9 @@ pub fn trace_formatted_hex(message: &str, buffer: &[u8]) {
 
 pub fn u8_ascii(line: &[u8]) -> String {
     line.iter()
-        .map(|b| match *b as char {
-            '\n' | '\r' | '\t' => ' ',
-            c => c,
+        .map(|b| match *b >= 33 && *b < 127 {
+            true => *b as char,
+            false => '.',
         }).collect::<String>()
 }
 
