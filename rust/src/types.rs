@@ -270,13 +270,18 @@ impl FastbootDevice {
     }
 
     pub fn getvar_u32(&mut self, cmd: &str) -> Result<u32> {
-        self.command(cmd)?;
+        self.getvar(cmd)?;
         self.reply.as_decimal()
     }
 
     pub fn getvar_string(&mut self, cmd: &str) -> Result<String> {
-        self.command(cmd)?;
+        self.getvar(cmd)?;
         String::from_utf8(self.reply.clone()).with_context(|| format!("Failed to parse {} as str", self.reply))
+    }
+
+    fn getvar(&mut self, cmd: &str) -> Result<FastbootHeader> {
+        let var = format!("getvar:{cmd}");
+        self.command(&var)
     }
 
     /// Tries to write a buffer to device
