@@ -37,9 +37,6 @@ const PID: u16 = 0xB00B;
 const IN: u8 = 0x81;
 const OUT: u8 = 0x01;
 
-// TODO: change these
-const BUFFER_SIZE: usize = 1024;
-const NUM_TRANSFERS: usize = 16;
 const TEN_SEC: Duration = Duration::from_secs(10);
 
 pub struct FastbootDevice {
@@ -61,8 +58,8 @@ impl FastbootDevice {
         let _device: Device = info.open().wait().unwrap_or_else(|e| panic!("Failed to open device (VID: {VID}, PID: {PID})\n{e}"));
         let _interface: Interface = _device.claim_interface(0).wait().unwrap();
 
-        let reader = _interface.endpoint::<Bulk, In>(IN).unwrap().reader(BUFFER_SIZE).with_num_transfers(NUM_TRANSFERS).with_read_timeout(TEN_SEC);
-        let writer = _interface.endpoint::<Bulk, Out>(OUT).unwrap().writer(BUFFER_SIZE).with_num_transfers(NUM_TRANSFERS).with_write_timeout(TEN_SEC);
+        let reader = _interface.endpoint::<Bulk, In>(IN).unwrap().reader(256).with_num_transfers(1).with_read_timeout(TEN_SEC);
+        let writer = _interface.endpoint::<Bulk, Out>(OUT).unwrap().writer(0x20000).with_num_transfers(4).with_write_timeout(TEN_SEC);
         let vec = Vec::<u8>::with_capacity(256);
 
         Self { _device, _interface, reader, writer, reply: vec.into() }
