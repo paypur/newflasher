@@ -1,6 +1,6 @@
 use crate::types::{ByteVec, ProgressBar, Slot};
 use crate::utils::*;
-use anyhow::{ensure, Context};
+use anyhow::{ensure, Context, anyhow};
 use flate2::read::GzDecoder;
 use std::ffi::CStr;
 use std::fs::File;
@@ -135,21 +135,21 @@ fn validate_prefix(sin_path: &Path) -> anyhow::Result<String> {
         .filter(|e| filter_entry(e))
         .map(|entry| {
             // ensure!(entry.size() != 0, "Tar entry contained 0 bytes!");
-            let name = CStr::from_bytes_until_nul(&entry.header().as_ustar()?.name).ok()?;
-            Some(Path::new(name.to_string_lossy().as_ref()).with_extension("").to_string_lossy().to_string())
+            let name = CStr::from_bytes_until_nul(&entry.header().as_ustar()?.name).ok()?.to_str().ok()?;
+            Some(Path::new(name).with_extension(""))
         })
         .into_iter();
 
     let flash_prefix = match prefix_iter.next().flatten() {
         Some(prefix) => prefix,
-        None => return Err(anyhow::Error::msg("Empty tar entry name!"))
+        None => return Err(anyhow!("Empty tar entry name!"))
     };
 
-    if !prefix_iter.all(|opt| opt.map(|s| s == flash_prefix).is_some()) {
-        return Err(anyhow::Error::msg("Mismatched tar entry name!"));
+    if !prefix_iter.all(|opt| opt.map(|s| s == flash_prefix).unwrap_or(false)) {
+        return Err(anyhow!("Mismatched tar entry name!"));
     }
 
-    Ok(flash_prefix)
+    Ok(flash_prefix.to_str().ok_or_else(|| anyhow!("Invalid UTF-8 in sin archive entry prefix!"))?.to_string())
 }
 
 fn open_sin_archive(sin_path: &Path) -> anyhow::Result<Archive<Box<dyn Read>>> {
