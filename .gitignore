@@ -1,26 +1,7 @@
-/newflasher
-/newflasher.arm32
-/newflasher.arm64
-/newflasher.exe
-/newflasher.i386
-/newflasher.rc
-/newflasher.spec
-/newflasher.res
-/newflasher.x64
-/newflasher.arm64_pie
-/newflasher.o
-/dump.bin
-/.DS_Store
-/obj
-/libs
-/zlib*
-/expat*
-/newflasher-*.txz
-/expat-2.2.9/
-/include
+newflasher
 
-/rust/target/
 .idea/
+target/
 
 perf.*
-*.sin
+*.txt

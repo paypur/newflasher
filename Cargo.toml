@@ -16,5 +16,5 @@ log = "0.4.33"
 indicatif = { version = "0.18.6", features = [] }
 console = "0.16.6"
 
-[build-dependencies]
-cc = "1.2.63"
+[profile.release]
+debug = "line-tables-only"
