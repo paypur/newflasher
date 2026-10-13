@@ -8,7 +8,7 @@ use std::io::{Read, Seek};
 use std::path::{Path};
 use log::{debug, error, info};
 use tar::{Archive, Entry, EntryType};
-use crate::fastboot::{FastbootDevice, FastbootHeader};
+use crate::fastboot::{FastbootDevice, Header};
 
 pub fn process_sins(
     usb: &mut FastbootDevice,
@@ -52,7 +52,7 @@ fn process_sins_slot(
     let has_slot = fb_end_cmd == "flash" && {
         let cmd = format!("getvar:has-slot:{flash_prefix}");
         match usb.command(cmd.as_str()) {
-            Ok(_) => usb.reply == b"yes",
+            Ok(res) => res.data == b"yes",
             Err(e) => {
                 error!("{e}");
                 false
@@ -101,14 +101,14 @@ fn process_sins_slot(
                 };
 
                 debug!("  {cmd}");
-                usb.command_expect(&cmd, FastbootHeader::Okay)?;
+                usb.command_expect_header(&cmd, Header::Okay)?;
             }
 
             /* Oreo changed partition image name, so this is a quick fix */
             if fb_end_cmd == "Repartition" && flash_prefix.starts_with("partitionimage_") {
                 let cmd = flash_prefix.replace("partitionimage_", "Repartition:");
                 debug!("{cmd}");
-                usb.command_expect(&cmd, FastbootHeader::Okay)?;
+                usb.command_expect_header(&cmd, Header::Okay)?;
             } else {
                 let cmd = match (has_slot, other) {
                     (false, _) => format!("{fb_end_cmd}:{flash_prefix}"),
@@ -116,7 +116,7 @@ fn process_sins_slot(
                     (true, true) => format!("{fb_end_cmd}:{flash_prefix}_{}", target_slot.other()),
                 };
 
-                usb.command_expect(&cmd, FastbootHeader::Okay)?;
+                usb.command_expect_header(&cmd, Header::Okay)?;
             }
         }
         progress.set_position(i as u64);
@@ -193,17 +193,19 @@ fn download_cms(usb: &mut FastbootDevice, entry: &mut Entry<Box<dyn Read>>, entr
     let cmd = format!("signature:{hex_len}");
     debug!("  {cmd}");
 
-    if usb.write_and_read_reply(cmd).context("Error writing signature command!")? == FastbootHeader::Fail {
+    let mut res = usb.write_and_read_reply(cmd).context("Error writing signature command!")?;
+
+    if res.header == Header::Fail {
         is_2021_device = true;
         info!("device from 2021 and up?");
 
         let cmd = format!("download:{hex_len}");
         debug!("  {cmd}");
 
-        usb.write_and_read_reply(cmd).context("Error writing signature command!")?;
+        res = usb.write_and_read_reply(cmd).context("Error writing signature command!")?;
     }
 
-    ensure!(hex_len == usb.reply, format!("Invalid DATA reply string, Expected {hex_len}, received {}", usb.reply));
+    ensure!(hex_len == res.data, "Invalid DATA reply string, Expected {hex_len}, received {}", res.data);
 
     let mut buf = vec![];
     entry.read_to_end(&mut buf)?;
@@ -214,11 +216,11 @@ fn download_cms(usb: &mut FastbootDevice, entry: &mut Entry<Box<dyn Read>>, entr
 
     // println!("      Wrote {} bytes", written);
 
-    let header = usb.read_reply()?;
-    ensure!(header == FastbootHeader::Okay, format!("Invalid header! Expected OKAY, received: {header:?}"));
+    let header = usb.read_and_parse()?;
+    let _ = header.expect_header(Header::Okay)?;
 
     if is_2021_device {
-        usb.write_and_expect_reply(b"signature", FastbootHeader::Okay)?;
+        usb.write_and_expect_header(b"signature", Header::Okay)?;
     }
 
     Ok(())

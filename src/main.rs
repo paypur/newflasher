@@ -4,9 +4,9 @@ use crate::utils::{is_sin_file};
 use std::fs;
 use std::path::PathBuf;
 use std::process::exit;
-use anyhow::{ensure, Context};
+use anyhow::{Context};
 use log::{debug, info};
-use crate::fastboot::{FastbootDevice, FastbootHeader};
+use crate::fastboot::{FastbootDevice, Header};
 use crate::ta::{TrimArea};
 
 pub mod tests;
@@ -67,8 +67,7 @@ fn main() {
     let _s1_root = dev.getvar_string("S1-root").unwrap();
     let _sake_root = dev.getvar_string("Sake-root").unwrap();
 
-    dev.get_data("Get-root-key-hash").unwrap();
-    let root_key_hash = dev.reply.iter().map(|b| format!("{:02X}", b)).collect::<String>();
+    let root_key_hash = dev.get_data("Get-root-key-hash").unwrap().to_hexadecimal_string();
 
     let _slot_count = dev.getvar_u32("slot-count").unwrap_or(1);
     let current_slot: Slot = dev.getvar_string("current-slot").unwrap().into();
@@ -141,7 +140,7 @@ fn main() {
     dev.set_active_slot(other_slot).unwrap();
     dev.exit_flash_mode().unwrap();
 
-    dev.command_expect("Sync", FastbootHeader::Okay).unwrap();
+    dev.command_expect_header("Sync", Header::Okay).unwrap();
 
     dev.reboot_system().unwrap();
 }
