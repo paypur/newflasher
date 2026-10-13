@@ -124,14 +124,6 @@ impl From<String> for ByteVec {
     }
 }
 
-impl From<CVec> for ByteVec {
-    fn from(value: CVec) -> Self {
-        unsafe {
-            Vec::from_raw_parts(value.ptr, value.len, value.cap).into()
-        }
-    }
-}
-
 impl FromIterator<u8> for ByteVec {
     fn from_iter<T: IntoIterator<Item = u8>>(iter: T) -> Self {
         iter.into_iter().collect::<Vec<u8>>().into()
@@ -156,20 +148,6 @@ impl<T> PartialEq<T> for ByteVec
 {
     fn eq(&self, other: &T) -> bool {
         self.data == other.as_ref()
-    }
-}
-
-#[repr(C)]
-pub struct CVec {
-    ptr: *mut u8,
-    len: usize,
-    cap: usize,
-}
-
-impl From<ByteVec> for CVec {
-    fn from(vec: ByteVec) -> Self {
-        let (ptr, len, cap) = vec.data.into_raw_parts();
-        Self { ptr, len, cap }
     }
 }
 
