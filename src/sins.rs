@@ -77,20 +77,18 @@ fn process_sins_slot(
 
     let progress = ProgressBar::new(parts as u64, text);
 
+    let other = sin_path.to_string_lossy().contains("_other");
+
     for (i, mut entry) in open_sin_archive(&sin_path)?
         .entries()?
         .into_iter()
         .flatten()
-        .filter(|e| filter_entry(e))
+        .filter(filter_entry)
         .enumerate() {
-        let entry_name = CStr::from_bytes_until_nul(&entry.header().as_ustar().unwrap().name)?.to_string_lossy().to_string();
-        let other = sin_path.to_string_lossy().contains("_other");
-
         if i == 0 {
-            download_cms(usb, &mut entry, &entry_name).with_context(|| format!("Failed to transfer '{entry_name}' cms"))?;
+            usb.download_cms(&mut entry)?;
         } else {
-            debug!("Uploading sparse chunk {}", entry_name);
-            usb.download_tar_entry(&mut entry).with_context(|| format!("Failed to transfer '{entry_name}' chunk {i}"))?;
+            usb.download_tar_entry(&mut entry).with_context(|| format!("Chunk {i} of {parts}"))?;
 
             // erase partition
             if i == 1 && fb_end_cmd == "flash" {
@@ -100,14 +98,12 @@ fn process_sins_slot(
                     (true, true) => format!("erase:{flash_prefix}_{}", target_slot.other()),
                 };
 
-                debug!("  {cmd}");
                 usb.command_expect_header(&cmd, Header::Okay)?;
             }
 
             /* Oreo changed partition image name, so this is a quick fix */
             if fb_end_cmd == "Repartition" && flash_prefix.starts_with("partitionimage_") {
                 let cmd = flash_prefix.replace("partitionimage_", "Repartition:");
-                debug!("{cmd}");
                 usb.command_expect_header(&cmd, Header::Okay)?;
             } else {
                 let cmd = match (has_slot, other) {
@@ -179,49 +175,4 @@ fn filter_entry(entry: &Entry<Box<dyn Read>>) -> bool {
             false
         }
     }
-}
-
-fn download_cms(usb: &mut FastbootDevice, entry: &mut Entry<Box<dyn Read>>, entry_name: &str) -> anyhow::Result<()> {
-    let mut is_2021_device: bool = false;
-
-    let hex_len = ByteVec::from_len(entry.size() as usize);
-    info!("Downloading signature {entry_name}");
-
-    let cstr = CStr::from_bytes_until_nul(&entry.header().as_ustar().unwrap().name)?.to_string_lossy();
-    ensure!(cstr == entry_name, "Invalid cms string!");
-
-    let cmd = format!("signature:{hex_len}");
-    debug!("  {cmd}");
-
-    let mut res = usb.write_and_read_reply(cmd).context("Error writing signature command!")?;
-
-    if res.header == Header::Fail {
-        is_2021_device = true;
-        info!("device from 2021 and up?");
-
-        let cmd = format!("download:{hex_len}");
-        debug!("  {cmd}");
-
-        res = usb.write_and_read_reply(cmd).context("Error writing signature command!")?;
-    }
-
-    ensure!(hex_len == res.data, "Invalid DATA reply string, Expected {hex_len}, received {}", res.data);
-
-    let mut buf = vec![];
-    entry.read_to_end(&mut buf)?;
-
-    // let written = std::io::copy(entry, &mut usb.writer).context("Error writing signature!")?;
-    // usb.writer.flush_end()?;
-    usb.write(&buf)?;
-
-    // println!("      Wrote {} bytes", written);
-
-    let header = usb.read_and_parse()?;
-    let _ = header.expect_header(Header::Okay)?;
-
-    if is_2021_device {
-        usb.write_and_expect_header(b"signature", Header::Okay)?;
-    }
-
-    Ok(())
 }

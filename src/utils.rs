@@ -1,9 +1,11 @@
-use std::ffi::OsStr;
+use anyhow::anyhow;
 use log::{Level, debug, error, log_enabled, trace};
+use std::ffi::OsStr;
 use std::fmt::Write;
 use std::fs::{DirEntry, File};
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
+use tar::Entry;
 
 pub fn trace_formatted_hex(message: &str, buffer: &[u8]) {
     if log_enabled!(Level::Trace) {
@@ -80,4 +82,10 @@ pub fn noerase_in_updatexml(file_name: &OsStr) -> bool {
     }
 
     false
+}
+
+pub fn tar_entry_header_name(entry: &Entry<Box<dyn Read>>) -> anyhow::Result<String> {
+    let header = entry.header().as_ustar().ok_or_else(|| anyhow!("Failed to parse Tar Entry header as ustar"))?;
+    let str = str::from_utf8(&header.name)?;
+    Ok(str.to_owned())
 }

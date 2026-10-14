@@ -1,7 +1,7 @@
 use crate::types::{ByteVec, Slot};
-use crate::utils::trace_formatted_hex;
+use crate::utils::{tar_entry_header_name, trace_formatted_hex};
 use anyhow::{ensure, Context};
-use log::{info, trace};
+use log::{debug, info, trace};
 use nusb::io::{EndpointRead, EndpointWrite};
 use nusb::transfer::{Bulk, In, Out};
 use nusb::{Device, Interface, MaybeFuture};
@@ -177,49 +177,84 @@ impl FastbootDevice {
         res.expect_header(expected)
     }
 
-    /// Tries to write a buffer to device
-    pub fn download(&mut self, data: impl AsRef<[u8]>) -> anyhow::Result<()> {
-        let len = data.as_ref().len();
-        let hex_len = ByteVec::from_len(len);
-        let cmd = format!("download:{hex_len}");
+    /// Attempts to write cms to device
+    pub fn download_cms(&mut self, entry: &mut Entry<Box<dyn Read>>) -> anyhow::Result<()> {
+        let entry_name = tar_entry_header_name(entry)?;
+        info!("Downloading signature {entry_name}");
 
-        let _ = self.command_expect(cmd, Header::Data, hex_len)?;
-        self.write_and_expect_header(data, Header::Okay).with_context(|| format!("Failed to download {} bytes to device!", len))?;
+        let hex_len = ByteVec::from_len(entry.size() as u32);
+
+        let mut res = self.command(format!("signature:{hex_len}"))?;
+
+        let is_2021_device: bool = res.header == Header::Fail;
+        if is_2021_device {
+            info!("device from 2021 and up?");
+            res = self.command(format!("download:{hex_len}"))?;
+        }
+
+        ensure!(hex_len == res.data, "Invalid DATA reply string, Expected {hex_len}, received {}", res.data);
+
+        let mut buf = vec![];
+        entry.read_to_end(&mut buf)?;
+        let _ = self.write_and_expect_header(&buf, Header::Okay).context("Failed to write cms! cms is possibly corrupt.")?;
+
+        if is_2021_device {
+            let _ = self.write_and_expect_header("signature", Header::Okay)?;
+        }
 
         Ok(())
     }
 
-    /// Tries to write tar entry to device
+    /// Attempts to write tar entry to device
     pub fn download_tar_entry(&mut self, entry: &mut Entry<Box<dyn Read>>) -> anyhow::Result<()> {
         const LIMIT: u64 = 0x200000;
 
-        let hex_len = ByteVec::from_len(entry.size() as usize);
+        let entry_name = tar_entry_header_name(entry)?;
+        info!("Downloading sparse chunk {entry_name}");
+
+        let mut f = || -> anyhow::Result<()> {
+            let hex_len = ByteVec::from_len(entry.size() as u32);
+            let cmd = format!("download:{hex_len}");
+
+            let _ = self.command_expect(cmd, Header::Data, hex_len)?;
+
+            let mut buffer = Vec::<u8>::with_capacity(LIMIT as usize);
+            let mut adapter = entry.take(LIMIT);
+
+            loop {
+                buffer.clear();
+                adapter.read_to_end(&mut buffer)?;
+
+                if buffer.is_empty() {
+                    break;
+                }
+
+                self.writer.write_all(&buffer)?;
+                trace!("WRITE[0x{:X}]:skip", buffer.len());
+
+                adapter.set_limit(LIMIT);
+            }
+
+            // TODO: should this be flush_end?
+            self.writer.flush()?;
+
+            let response = self.read_and_parse()?;
+            let _ = response.expect_header(Header::Okay)?;
+
+            Ok(())
+        };
+
+        f().with_context(|| format!("Failed to transfer {entry_name}"))
+    }
+
+    /// Attempts to write a buffer to device
+    pub fn download(&mut self, data: impl AsRef<[u8]>) -> anyhow::Result<()> {
+        let len = data.as_ref().len();
+        let hex_len = ByteVec::from_len(len as u32);
         let cmd = format!("download:{hex_len}");
 
         let _ = self.command_expect(cmd, Header::Data, hex_len)?;
-
-        let mut buffer = Vec::<u8>::with_capacity(LIMIT as usize);
-        let mut adapter = entry.take(LIMIT);
-
-        loop {
-            buffer.clear();
-            adapter.read_to_end(&mut buffer)?;
-
-            if buffer.is_empty() {
-                break;
-            }
-
-            self.writer.write_all(&buffer).context("Failed to download tar entry to device")?;
-            trace!("WRITE[0x{:X}]:skip", buffer.len());
-
-            adapter.set_limit(LIMIT);
-        }
-
-        // TODO: should this be flush_end?
-        self.writer.flush()?;
-
-        let response = self.read_and_parse()?;
-        let _ = response.expect_header(Header::Okay)?;
+        self.write_and_expect_header(data, Header::Okay).with_context(|| format!("Failed to download {} bytes to device!", len))?;
 
         Ok(())
     }
