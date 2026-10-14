@@ -209,7 +209,7 @@ impl FastbootDevice {
     pub fn download_tar_entry(&mut self, entry: &mut Entry<Box<dyn Read>>) -> anyhow::Result<()> {
         const LIMIT: u64 = 0x200000;
 
-        let entry_name = tar_entry_header_name(entry)?;
+        let entry_name = tar_entry_header_name(entry)?.to_owned();
         info!("Downloading sparse chunk {entry_name}");
 
         let mut f = || -> anyhow::Result<()> {

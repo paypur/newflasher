@@ -84,8 +84,7 @@ pub fn noerase_in_updatexml(file_name: &OsStr) -> bool {
     false
 }
 
-pub fn tar_entry_header_name(entry: &Entry<Box<dyn Read>>) -> anyhow::Result<String> {
+pub fn tar_entry_header_name<'a>(entry: &'a Entry<Box<dyn Read>>) -> anyhow::Result<&'a str> {
     let header = entry.header().as_ustar().ok_or_else(|| anyhow!("Failed to parse Tar Entry header as ustar"))?;
-    let str = str::from_utf8(&header.name)?;
-    Ok(str.to_owned())
+    Ok(str::from_utf8(&header.name)?)
 }

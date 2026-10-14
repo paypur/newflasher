@@ -131,7 +131,7 @@ fn validate_prefix(sin_path: &Path) -> anyhow::Result<String> {
         .filter(|e| filter_entry(e))
         .map(|entry| {
             // ensure!(entry.size() != 0, "Tar entry contained 0 bytes!");
-            let name = CStr::from_bytes_until_nul(&entry.header().as_ustar()?.name).ok()?.to_str().ok()?;
+            let name = tar_entry_header_name(&entry).ok()?;
             Some(Path::new(name).with_extension(""))
         })
         .into_iter();
