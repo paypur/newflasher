@@ -79,11 +79,20 @@ impl ByteVec {
     }
 
     pub fn to_hexadecimal_string(&self) -> String {
+        const NIBBLE_TO_HEX: fn(u8) -> char = |b: u8| -> char {
+            let i = b.min(0x10);
+            (if i < 10 {
+                '0' as u8 + i
+            } else {
+                'A' as u8 + i - 10
+            }) as char
+        };
+
         let mut string = String::new();
 
         for b in self.data.iter() {
-            string.push(('0' as u8 + b >> 4) as char);
-            string.push(('0' as u8 + b & 0xF) as char);
+            string.push(NIBBLE_TO_HEX(b >> 4));
+            string.push(NIBBLE_TO_HEX(b & 0xF));
         }
 
         string
