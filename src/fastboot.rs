@@ -161,6 +161,7 @@ impl FastbootDevice {
 
     pub fn command(&mut self, cmd: impl AsRef<str>) -> anyhow::Result<Response> {
         let cmd = cmd.as_ref();
+        debug!("{cmd}");
         self.write_and_read_reply(cmd).with_context(|| format!("Fastboot command {cmd} failed!"))
     }
 

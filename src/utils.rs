@@ -7,19 +7,23 @@ use std::path::PathBuf;
 
 pub fn trace_formatted_hex(message: &str, buffer: &[u8]) {
     if log_enabled!(Level::Trace) {
-        let mut builder = String::with_capacity(0xF00);
-
-        let _ = writeln!(builder, "{}[0x{:X}]:", message, buffer.len());
-
-        buffer.chunks(16)
-              .take(64)
-              .enumerate()
-              .for_each(|(i, chunk)| {
-                  let _ = writeln!(builder, "0x{i:07X}0  {:<48} {}", chunk.iter().map(|b| format!("{b:02X} ")).collect::<String>(), u8_ascii(chunk));
-              });
-
-        trace!("{builder}");
+        trace!("{}", formatted_hex(message, buffer));
     }
+}
+
+pub fn formatted_hex(message: &str, buffer: &[u8]) -> String {
+    let mut builder = String::with_capacity(0xF00);
+
+    let _ = writeln!(builder, "{}[0x{:X}]:", message, buffer.len());
+
+    buffer.chunks(16)
+          .take(64)
+          .enumerate()
+          .for_each(|(i, chunk)| {
+              let _ = writeln!(builder, "0x{i:07X}0  {:<48} {}", chunk.iter().map(|b| format!("{b:02X} ")).collect::<String>(), u8_ascii(chunk));
+          });
+
+    builder
 }
 
 pub fn u8_ascii(line: &[u8]) -> String {
