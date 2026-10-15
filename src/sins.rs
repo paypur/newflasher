@@ -1,29 +1,27 @@
-use crate::types::{ByteVec, ProgressBar, Slot};
+use crate::fastboot::{FastbootDevice, Header};
+use crate::types::{ProgressBar, Slot};
 use crate::utils::*;
-use anyhow::{ensure, Context, anyhow};
+use anyhow::{Context, anyhow};
 use flate2::read::GzDecoder;
-use std::ffi::CStr;
+use log::{debug, error, info};
 use std::fs::File;
 use std::io::{Read, Seek};
-use std::path::{Path};
-use log::{debug, error, info};
+use std::path::Path;
 use tar::{Archive, Entry, EntryType};
-use crate::fastboot::{FastbootDevice, Header};
 
 pub fn process_sins(
     usb: &mut FastbootDevice,
     sin_path: &Path,
-    fb_end_cmd: &str,
     target_slot: Slot,
 ) -> anyhow::Result<()> {
     let flash_prefix = validate_prefix(sin_path)?;
 
     let flash_both_slots = flash_prefix == "bootloader" || flash_prefix == "bluetooth" || flash_prefix == "dsp" || flash_prefix == "modem" || flash_prefix == "rdimage";
 
-    process_sins_slot(usb, &sin_path, fb_end_cmd, flash_prefix.as_str(), target_slot, flash_both_slots)?;
+    process_sins_slot(usb, sin_path, flash_prefix.as_str(), target_slot, flash_both_slots)?;
 
     if flash_both_slots {
-        process_sins_slot(usb, &sin_path, fb_end_cmd, flash_prefix.as_str(), target_slot.other(), flash_both_slots)?;
+        process_sins_slot(usb, sin_path, flash_prefix.as_str(), target_slot.other(), flash_both_slots)?;
     }
 
     Ok(())
@@ -32,11 +30,12 @@ pub fn process_sins(
 fn process_sins_slot(
     usb: &mut FastbootDevice,
     sin_path: &Path,
-    fb_end_cmd: &str,
     flash_prefix: &str,
     target_slot: Slot,
     flash_both_slots: bool,
 ) -> anyhow::Result<()> {
+    // info!("Processing {}", sin_path.to_string_lossy());
+
     // TODO: move to main
     let mut keep_userdata: bool = true;
 
@@ -47,27 +46,14 @@ fn process_sins_slot(
         return Ok(());
     }
 
-    // info!("Processing {}", sin_path.to_string_lossy());
-
-    let has_slot = fb_end_cmd == "flash" && {
-        let cmd = format!("getvar:has-slot:{flash_prefix}");
-        match usb.command(cmd.as_str()) {
-            Ok(res) => res.data == b"yes",
-            Err(e) => {
-                error!("{e}");
-                false
-            }
-        }
-    };
+    let parts = open_sin_archive(&sin_path)?
+        .entries()?
+        .count();
 
     let prefix = match file_name.split_once('_') {
         Some((first, _)) => first,
         None => file_name.as_ref(),
     };
-
-    let parts = open_sin_archive(&sin_path)?
-        .entries()?
-        .count();
 
     let text = if flash_both_slots {
         format!("Processing {prefix} ({target_slot})")
@@ -78,6 +64,20 @@ fn process_sins_slot(
     let progress = ProgressBar::new(parts as u64, text);
 
     let other = sin_path.to_string_lossy().contains("_other");
+
+    // TODO: is this assumption always true?
+    let is_partition_image = flash_prefix.starts_with("partitionimage_");
+
+    let has_slot = !is_partition_image && {
+        let cmd = format!("getvar:has-slot:{flash_prefix}");
+        match usb.command(cmd.as_str()) {
+            Ok(res) => res.data == b"yes",
+            Err(e) => {
+                error!("{e}");
+                false
+            }
+        }
+    };
 
     for (i, mut entry) in open_sin_archive(&sin_path)?
         .entries()?
@@ -90,29 +90,25 @@ fn process_sins_slot(
         } else {
             usb.download_tar_entry(&mut entry).with_context(|| format!("Chunk {i} of {parts}"))?;
 
-            // erase partition
-            if i == 1 && fb_end_cmd == "flash" {
-                let cmd = match (has_slot, other) {
-                    (false, _) => format!("erase:{flash_prefix}"),
-                    (true, false) => format!("erase:{flash_prefix}_{target_slot}"),
-                    (true, true) => format!("erase:{flash_prefix}_{}", target_slot.other()),
-                };
-
-                usb.command_expect_header(&cmd, Header::Okay)?;
-            }
-
-            /* Oreo changed partition image name, so this is a quick fix */
-            if fb_end_cmd == "Repartition" && flash_prefix.starts_with("partitionimage_") {
+            if is_partition_image {
                 let cmd = flash_prefix.replace("partitionimage_", "Repartition:");
-                usb.command_expect_header(&cmd, Header::Okay)?;
+                usb.command_expect_header(cmd, Header::Okay)?;
             } else {
-                let cmd = match (has_slot, other) {
-                    (false, _) => format!("{fb_end_cmd}:{flash_prefix}"),
-                    (true, false) => format!("{fb_end_cmd}:{flash_prefix}_{target_slot}"),
-                    (true, true) => format!("{fb_end_cmd}:{flash_prefix}_{}", target_slot.other()),
-                };
+                if i == 1 {
+                    let erase_cmd = match (has_slot, other) {
+                        (false, _) => format!("erase:{flash_prefix}"),
+                        (true, false) => format!("erase:{flash_prefix}_{target_slot}"),
+                        (true, true) => format!("erase:{flash_prefix}_{}", target_slot.other()),
+                    };
+                    usb.command_expect_header(erase_cmd, Header::Okay)?;
+                }
 
-                usb.command_expect_header(&cmd, Header::Okay)?;
+                let flash_cmd = match (has_slot, other) {
+                    (false, _) => format!("flash:{flash_prefix}"),
+                    (true, false) => format!("flash:{flash_prefix}_{target_slot}"),
+                    (true, true) => format!("flash:{flash_prefix}_{}", target_slot.other()),
+                };
+                usb.command_expect_header(flash_cmd, Header::Okay)?;
             }
         }
         progress.set_position(i as u64);

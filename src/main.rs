@@ -103,18 +103,13 @@ fn main() {
     println!("{:─<97}", "Processing ./partition files ");
 
     for path in partition {
-        process_sins(&mut dev, path.as_path(), "Repartition", other_slot).unwrap();
+        process_sins(&mut dev, path.as_path(), other_slot).unwrap();
     }
 
     println!("{:─<97}", "Processing .sin files ");
 
     for path in sins {
-        if path.file_name().unwrap().to_string_lossy().contains("persist") {
-            info!("Skipping {}", path.to_string_lossy());
-            continue;
-        }
-
-        process_sins(&mut dev, path.as_path(), "flash", other_slot).with_context(|| format!("Failed to flash {}", path.display())).unwrap()
+        process_sins(&mut dev, path.as_path(), other_slot).with_context(|| format!("Failed to flash {}", path.display())).unwrap()
     };
  
     println!("{:─<97}", "Processing .ta files ");
@@ -132,7 +127,7 @@ fn main() {
 
     for img in &boot.boot_images {
         let path = PathBuf::from("./boot").join(img);
-        process_sins(&mut dev, path.as_path(), "flash", other_slot).unwrap();
+        process_sins(&mut dev, path.as_path(), other_slot).unwrap();
     }
 
     // print_firmware_history(&mut usb).unwrap();
