@@ -2,6 +2,7 @@ use crate::sins::{process_sins};
 use crate::types::{ProgressBar, Slot};
 use crate::utils::{is_sin_file};
 use std::fs;
+use std::io::{stdin, Read};
 use std::path::PathBuf;
 use std::process::exit;
 use anyhow::{Context};
@@ -96,6 +97,15 @@ fn main() {
     let boot_ta = TrimArea::try_from_file(PathBuf::from("./boot").join(&boot.boot_config)).unwrap();
     debug!("{:#?}", boot_ta);
 
+    println!("Active Slot: {current_slot}");
+    println!("Ready to flash device, press any key to continue ...");
+
+    loop {
+        let mut b = [0; 1];
+        if let Ok(l) = stdin().read(&mut b) && l > 0{
+            break;
+        }
+    }
 
     /* begin flashing */
     dev.enter_flash_mode().unwrap();

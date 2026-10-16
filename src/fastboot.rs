@@ -119,6 +119,7 @@ impl FastbootDevice {
     pub fn set_active_slot(&mut self, slot: Slot) -> anyhow::Result<()> {
         let cmd = format!("set_active:{slot}");
         self.command_expect_header(cmd, Header::Okay)?;
+        println!("Set active slot to {slot}");
         Ok(())
     }
 
@@ -274,7 +275,22 @@ impl FastbootDevice {
         trace_formatted_hex("WRITE", bytes);
 
         self.writer.write_all(bytes)?;
-        self.writer.flush_end()?;
+        let r = self.writer.flush_end();
+
+        if let Err(e) = r && e.kind() == ErrorKind::TimedOut {
+            match e.kind() {
+                ErrorKind::TimedOut => {
+                    eprintln!("Flush timed out.");
+
+                    // same as read but don't care about data
+                    let mut short_reader = self.reader.until_short_packet();
+                    std::io::copy(&mut short_reader, &mut std::io::sink())?;
+                    short_reader.consume_end()?;
+                },
+                _ => return Err(e)?
+            }
+        };
+
         Ok(bytes.len())
     }
 
@@ -282,6 +298,7 @@ impl FastbootDevice {
     pub fn read_and_parse(&mut self) -> anyhow::Result<Response> {
         let mut vec = self.read()?;
         trace_formatted_hex("READ", vec.as_slice());
+
         if vec.len() < 4 { return Ok(Response::new(Header::NoHeader, vec)) }
 
         let prefix = Header::from(&vec[0..4]);
