@@ -46,7 +46,7 @@ fn main() {
         .unwrap()
         .to_string_lossy()
         .contains(product.as_str()) {
-        println!("Specified folder is probably not for this device!");
+        println!("Specified directory is probably not for this device!");
         exit(-1);
     }
 
@@ -61,7 +61,7 @@ fn main() {
     let _platform_id = dev.getvar_string("Platform-id").unwrap();
     let _rooting_status = dev.getvar_string("Rooting-status").unwrap();
     let _ufs_info = dev.getvar_string("Ufs-info").unwrap();
-    let _emmc_info = dev.getvar_string("Emmc-info").unwrap();
+    let _emmc_info = dev.getvar_string("Emmc-info");
     let _default_security = dev.getvar_string("Default-security").unwrap() == "ON";
     let _keystore_counter = dev.getvar_string("Keystore-counter").unwrap();
     let _security_state = dev.getvar_string("Security-state").unwrap();
@@ -81,15 +81,11 @@ fn main() {
     }
 
     /* parse relevant files first */
-    let tas = ta::parse_all_files().unwrap();
+    let tas = ta::parse_all().unwrap();
 
     let partition = xml_parser::partition_delivery().unwrap();
 
-    let sins = fs::read_dir("./")
-        .unwrap()
-        .filter_map(|entry| is_sin_file(entry))
-        .collect::<Vec<_>>();
-    info!("Found {} .sin files", sins.len());
+    let sins = sin_files();
 
     let boot = xml_parser::boot_delivery(&root_key_hash).unwrap();
     debug!("{:#?}", boot);
@@ -148,4 +144,14 @@ fn main() {
     dev.command_expect_header("Sync", Header::Okay).unwrap();
 
     dev.reboot_system().unwrap();
+}
+
+fn sin_files() -> Vec<PathBuf> {
+    let sins = fs::read_dir("./")
+        .unwrap()
+        .filter_map(is_sin_file)
+        .filter(|path| !path.file_name().unwrap() .to_string_lossy().contains("persist"))
+        .collect::<Vec<_>>();
+    info!("Found {} .sin files", sins.len());
+    sins
 }

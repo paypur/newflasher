@@ -71,7 +71,6 @@ pub fn noerase_in_updatexml(file_name: &OsStr) -> bool {
         match line {
             Ok(str) => {
                 if !str.is_empty() && str.trim() == format!("<NOERASE>{search_for}</NOERASE>") {
-                    debug!("{}", str);
                     return true;
                 }
             }

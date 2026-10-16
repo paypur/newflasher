@@ -67,9 +67,7 @@ impl TrimArea {
 
             match state {
                 TAParseState::Partition => {
-                    if trim.len() != 2 {
-                        return Err(anyhow!("Invalid partition!"));
-                    }
+                    ensure!(trim.len() == 2, "Invalid partition!");
 
                     let bytes = trim.as_bytes();
                     if bytes[0].is_ascii_digit() && bytes[1].is_ascii_digit() {
@@ -180,11 +178,11 @@ impl BootConfigUnitBuilder {
     }
 }
 
-pub fn parse_all_files() -> anyhow::Result<Vec<TrimArea>> {
+pub fn parse_all() -> anyhow::Result<Vec<TrimArea>> {
     let tas = fs::read_dir("./").unwrap()
-                                .filter_map(|entry| is_ta_file(entry))
+                                .filter_map(is_ta_file)
                                 .filter(|path| !noerase_in_updatexml(path.file_name().unwrap()))
-                                .map(|path| TrimArea::try_from_file(path))
+                                .map(TrimArea::try_from_file)
                                 .collect::<Result<Vec<_>, _>>()
                                 .context("All .ta files could not be successfully parsed!")?;
 
