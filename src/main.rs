@@ -104,7 +104,7 @@ fn main() {
     }
 
     /* begin flashing */
-    dev.enter_flash_mode().unwrap();
+    dev.enter_flash_mode();
 
     println!("{:─<97}", "Processing ./partition files ");
 
@@ -138,12 +138,10 @@ fn main() {
 
     // print_firmware_history(&mut usb).unwrap();
 
-    dev.set_active_slot(other_slot).unwrap();
-    dev.exit_flash_mode().unwrap();
-
-    dev.command_expect_header("Sync", Header::Okay).unwrap();
-
-    dev.reboot_system().unwrap();
+    dev.set_active_slot(other_slot);
+    dev.exit_flash_mode();
+    dev.sync();
+    dev.reboot_system();
 }
 
 fn sin_files() -> Vec<PathBuf> {

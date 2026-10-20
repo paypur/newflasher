@@ -70,6 +70,8 @@ impl FastbootDevice {
             .find(|d| d.vendor_id() == VID && d.product_id() == PID)
             .expect("Failed to find device at /dev/bus/usb! Device should be connected via flash mode (green *)");
 
+        info!("USB device connected at {:?} speed", info.speed());
+
         let _device: Device = info.open().wait().unwrap_or_else(|e| panic!("Failed to open device (VID: {VID}, PID: {PID})\n{e}"));
         let _interface: Interface = _device.claim_interface(0).wait().unwrap();
 
@@ -96,31 +98,31 @@ impl FastbootDevice {
         Ok(())
     }
 
-    pub fn reboot_system(&mut self) -> anyhow::Result<()> {
-        self.command_expect_header("continue", Header::Okay)?;
+    pub fn reboot_system(&mut self) {
+        self.command_expect_header("continue", Header::Okay).expect("Failed to reboot to system!");
         println!("Rebooting to system");
-        Ok(())
     }
 
-    pub fn enter_flash_mode(&mut self) -> anyhow::Result<()> {
-        self.download(&[1u8])?;
-        self.command_expect_header("Write-TA:2:10100", Header::Okay)?;
-        info!("Entered flashmode");
-        Ok(())
+    pub fn enter_flash_mode(&mut self) {
+        self.download(&[1u8]).unwrap();
+        self.command_expect_header("Write-TA:2:10100", Header::Okay).expect("Failed to enter flash mode");
+        info!("Entered flash mode");
     }
 
-    pub fn exit_flash_mode(&mut self) -> anyhow::Result<()> {
-        self.download(&[0u8])?;
-        self.command_expect_header("Write-TA:2:10100", Header::Okay)?;
-        info!("Exited flashmode");
-        Ok(())
+    pub fn exit_flash_mode(&mut self) {
+        self.download(&[0u8]).unwrap();
+        self.command_expect_header("Write-TA:2:10100", Header::Okay).expect("Failed to exit flash mode");
+        info!("Exited flash mode");
     }
 
-    pub fn set_active_slot(&mut self, slot: Slot) -> anyhow::Result<()> {
+    pub fn sync(&mut self) {
+        self.command_expect_header("Sync", Header::Okay).unwrap();
+    }
+
+    pub fn set_active_slot(&mut self, slot: Slot) {
         let cmd = format!("set_active:{slot}");
-        self.command_expect_header(cmd, Header::Okay)?;
+        self.command_expect_header(cmd, Header::Okay).expect("Failed to set active slot");
         println!("Set active slot to {slot}");
-        Ok(())
     }
 
     /// For commands that require multiple reads to receive the actual data
