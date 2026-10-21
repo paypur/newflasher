@@ -1,5 +1,5 @@
 use std::fs;
-use crate::types::{ByteVec};
+use crate::types::{ByteVec, ProgressBar};
 use anyhow::{Context, anyhow, ensure};
 use log::{debug, info};
 use std::fs::File;
@@ -148,13 +148,15 @@ impl TrimArea {
     }
 
     pub fn flash(&self, usb: &mut FastbootDevice) -> anyhow::Result<()> {
+        let mut progress = ProgressBar::new(self.boot_config_units.len() as u64, format!("Flashing {}", self.name));
+
         for unit in &self.boot_config_units {
             usb.download(unit.data.as_slice())?;
-
-            let cmd = format!("Write-TA:{}:{}", self.partition, unit.unit);
-            usb.command(cmd.as_str())?;
+            usb.command(format!("Write-TA:{}:{}", self.partition, unit.unit))?;
+            progress.inc();
         }
-
+        
+        progress.okay();
         Ok(())
     }
 }

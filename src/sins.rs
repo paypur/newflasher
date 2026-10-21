@@ -20,9 +20,10 @@ pub fn process_sins(
 
     process_sins_slot(usb, sin_path, flash_prefix.as_str(), target_slot, flash_both_slots)?;
 
-    if flash_both_slots {
-        process_sins_slot(usb, sin_path, flash_prefix.as_str(), target_slot.other(), flash_both_slots)?;
-    }
+    // TODO: flashing both slots is just not safe
+    // if flash_both_slots {
+    //     process_sins_slot(usb, sin_path, flash_prefix.as_str(), target_slot.other(), flash_both_slots)?;
+    // }
 
     Ok(())
 }
@@ -37,7 +38,7 @@ fn process_sins_slot(
     // info!("Processing {}", sin_path.to_string_lossy());
 
     // TODO: move to main
-    let mut keep_userdata: bool = true;
+    let keep_userdata: bool = true;
 
     let file_name = sin_path.file_name().unwrap().to_string_lossy();
 

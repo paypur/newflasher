@@ -181,6 +181,10 @@ impl ProgressBar {
         }
     }
 
+    pub fn inc(&mut self) {
+        self.bar.inc(1)
+    }
+
     pub fn set_position(&self, pos: u64) {
         self.bar.set_position(pos);
     }

@@ -1,14 +1,15 @@
-use crate::sins::{process_sins};
+use crate::fastboot::FastbootDevice;
+use crate::sins::process_sins;
+use crate::ta::TrimArea;
 use crate::types::{ProgressBar, Slot};
-use crate::utils::{is_sin_file};
-use std::fs;
-use std::io::{stdin, Read};
+use crate::utils::is_sin_file;
+use anyhow::Context;
+use log::info;
+use std::io::{Read, stdin};
 use std::path::PathBuf;
 use std::process::exit;
-use anyhow::{Context};
-use log::{debug, info};
-use crate::fastboot::{FastbootDevice, Header};
-use crate::ta::{TrimArea};
+use std::fs;
+use crate::xml_parser::BootConfiguration;
 
 pub mod tests;
 pub mod types;
@@ -46,8 +47,7 @@ fn main() {
         .unwrap()
         .to_string_lossy()
         .contains(product.as_str()) {
-        println!("Specified directory is probably not for this device!");
-        exit(-1);
+        panic!("Specified directory is probably not for this device!");
     }
 
     let _version = dev.getvar_string("version").unwrap();
@@ -76,29 +76,21 @@ fn main() {
     let battery = dev.getvar_u32("Battery").unwrap();
 
     if battery < 15 {
-      println!("Battery level is too low. Charge your device before flashing!");
-      exit(1);
+        panic!("Battery level is too low. Charge your device before flashing!");
     }
 
     /* parse relevant files first */
     let tas = ta::parse_all().unwrap();
-
     let partition = xml_parser::partition_delivery().unwrap();
-
     let sins = sin_files();
-
     let boot = xml_parser::boot_delivery(&root_key_hash).unwrap();
-    debug!("{:#?}", boot);
-
     let boot_ta = TrimArea::try_from_file(PathBuf::from("./boot").join(&boot.boot_config)).unwrap();
-    debug!("{:#?}", boot_ta);
 
     println!("Active Slot: {current_slot}");
     println!("Ready to flash device, press any key to continue ...");
 
     loop {
-        let mut b = [0; 1];
-        if let Ok(l) = stdin().read(&mut b) && l > 0{
+        if let Ok(_) = stdin().read(&mut [0u8]) {
             break;
         }
     }
@@ -106,35 +98,10 @@ fn main() {
     /* begin flashing */
     dev.enter_flash_mode();
 
-    println!("{:─<97}", "Processing ./partition files ");
-
-    for path in partition {
-        process_sins(&mut dev, path.as_path(), other_slot).unwrap();
-    }
-
-    println!("{:─<97}", "Processing .sin files ");
-
-    for path in sins {
-        process_sins(&mut dev, path.as_path(), other_slot).with_context(|| format!("Failed to flash {}", path.display())).unwrap()
-    };
- 
-    println!("{:─<97}", "Processing .ta files ");
-
-    for ta in tas {
-        let progress = ProgressBar::new(1, format!("Processing {}", ta.name));
-        ta.flash(&mut dev).unwrap();
-        progress.set_position(1);
-        progress.okay();
-    }
-
-    println!("{:─<97}", "Processing boot delivery ");
-
-    boot_ta.flash(&mut dev).unwrap();
-
-    for img in &boot.boot_images {
-        let path = PathBuf::from("./boot").join(img);
-        process_sins(&mut dev, path.as_path(), other_slot).unwrap();
-    }
+    flash_sins(&mut dev, sins, other_slot);
+    flash_trim_areas(&mut dev, tas);
+    flash_boot(&mut dev, boot, boot_ta, other_slot);
+    flash_partitions(&mut dev, partition, other_slot);
 
     // print_firmware_history(&mut usb).unwrap();
 
@@ -144,11 +111,58 @@ fn main() {
     dev.reboot_system();
 }
 
+fn flash_sins(dev: &mut FastbootDevice, sins: Vec<PathBuf>, slot: Slot) {
+    println!("{:─<97}", "Processing .sin files ");
+
+    // can flash some sin files and still boot
+    for path in sins {
+        if let Err(e) = process_sins(dev, path.as_path(), slot).with_context(|| format!("Failed to flash {}", path.display())) {
+            dev.exit_flash_mode();
+            dev.sync();
+            panic!("{e}");
+        }
+    };
+}
+
+fn flash_trim_areas(dev: &mut FastbootDevice, tas: Vec<TrimArea>) {
+    println!("{:─<97}", "Processing .ta files ");
+
+    // can flash only one ta at a time and still boot
+    for ta in tas {
+        if let Err(e) = ta.flash(dev) {
+            dev.exit_flash_mode();
+            dev.sync();
+            panic!("{e}");
+        }
+    }
+}
+
+fn flash_boot(dev: &mut FastbootDevice, boot: BootConfiguration, boot_ta: TrimArea, slot: Slot) {
+    println!("{:─<97}", "Processing boot delivery ");
+
+    boot_ta.flash(dev).unwrap();
+
+    // seems to be just one file
+    for img in &boot.boot_images {
+        let path = PathBuf::from("./boot").join(img);
+        process_sins(dev, path.as_path(), slot).unwrap();
+    }
+}
+
+fn flash_partitions(dev: &mut FastbootDevice, partition: Vec<PathBuf>, slot: Slot) {
+    println!("{:─<97}", "Processing ./partition files ");
+
+    // failing here causes "your device is corrupted and cannot be trusted" error to appear on boot
+    for path in partition {
+        process_sins(dev, path.as_path(), slot).unwrap();
+    }
+}
+
 fn sin_files() -> Vec<PathBuf> {
     let sins = fs::read_dir("./")
         .unwrap()
         .filter_map(is_sin_file)
-        .filter(|path| !path.file_name().unwrap() .to_string_lossy().contains("persist"))
+        .filter(|path| !path.file_name().unwrap().to_string_lossy().contains("persist"))
         .collect::<Vec<_>>();
     info!("Found {} .sin files", sins.len());
     sins

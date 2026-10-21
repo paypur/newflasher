@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use log::{Level, debug, error, log_enabled, trace};
+use log::{Level, error, log_enabled, trace};
 use std::ffi::OsStr;
 use std::fmt::Write;
 use std::fs::{DirEntry, File};
