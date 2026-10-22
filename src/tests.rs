@@ -1,19 +1,16 @@
 #[cfg(test)]
 mod tests {
-    use std::ffi::{c_char, c_uint, CString};
-    use std::fs;
     use crate::*;
+    use std::{env, fs};
 
-    use std::fs::{DirEntry, File};
+    use crate::ta::{BootConfigUnit, TrimArea};
+    use crate::types::ByteVec;
+    use std::fs::File;
     use std::io::Read;
-    use std::os::unix::raw::uid_t;
     use std::path::{Path, PathBuf};
-    use std::slice::from_raw_parts;
     use std::sync::{Mutex, OnceLock};
     use tar::Archive;
-    use crate::ta::{TrimArea, BootConfigUnit};
-    use crate::types::{ByteVec, FastbootHeader, Slot};
-    use crate::xml_parser::{boot_delivery, partition_delivery};
+    use crate::sins::Sin;
 
     #[repr(C)]
     #[derive(PartialEq, Debug)]
@@ -23,13 +20,6 @@ mod tests {
         data: *const u8,
         size: usize
     }
-
-    unsafe extern "C" {
-        fn process_ta_file_c(file: *const c_char) -> TA;
-    }
-
-    const VID: u16 = 0x0FCE;
-    const PID: u16 = 0xB00B;
 
     static DEVICE: OnceLock<Mutex<FastbootDevice>> = OnceLock::new();
 
@@ -48,6 +38,29 @@ mod tests {
         std::env::set_current_dir(cwd).unwrap();
     }
 
+    fn parse_files() {
+        let _tas = ta::parse_all().unwrap();
+        let _partition = xml_parser::partition_delivery().unwrap();
+        let _sins = Sin::open_all().unwrap();
+        let _boot = xml_parser::boot_delivery(&std::env::var("ROOT_KEY_HASH").unwrap()).unwrap();
+        let _boot_ta = TrimArea::try_from_file(PathBuf::from("./boot").join(&_boot.boot_config)).unwrap();
+    }
+
+    #[test]
+    fn parse_files_xqec72() {
+        env_logger::builder().format_timestamp(None).init();
+
+        env::set_current_dir("/media/secondary/xperia/XQ-EC72_Customized_HK_69.2.A.4.110").unwrap();
+        parse_files();
+    }
+
+    #[test]
+    fn parse_files_xqge44() {
+        env_logger::builder().format_timestamp(None).init();
+        env::set_current_dir("/media/secondary/xperia/XQ-GE44_Customized_JP_73.0.A.2.62").unwrap();
+        parse_files();
+    }
+
     #[test]
     fn test_xml() {
         env_logger::builder()
@@ -55,7 +68,7 @@ mod tests {
             .init();
 
         test_in_dir("tests/data/H8314_Customized_US_52.1.A.3.137-R7C/", || {
-            let boot = boot_delivery("C8D92A2DBA1482588EFF712963329500AC7155CEA8494FDD4B7B180F2F871801").unwrap();
+            let boot = xml_parser::boot_delivery("C8D92A2DBA1482588EFF712963329500AC7155CEA8494FDD4B7B180F2F871801").unwrap();
             assert_eq!(boot._space_id, String::from("1310-7079"));
             assert_eq!(boot._name, String::from("COMMERCIAL_0008B0E1"));
             assert!(boot.plf_root_hash.starts_with("C8D92A2DBA1482588EFF712963329500AC7155CEA8494FDD"));
@@ -65,7 +78,7 @@ mod tests {
         });
 
         test_in_dir("tests/data/XQ-EC72_Customized_HK_69.2.A.4.110/", || {
-            let boot = boot_delivery(std::env::var("ROOT_KEY_HASH").unwrap().as_str()).unwrap();
+            let boot = xml_parser::boot_delivery(std::env::var("ROOT_KEY_HASH").unwrap().as_str()).unwrap();
             assert_eq!(boot._space_id, String::from("8650-0001"));
             assert_eq!(boot._name, String::from("COMMERCIAL_002270E1"));
             assert!(boot.plf_root_hash.starts_with("2B9EB2535D4A1179B294D4D083F68D9D3DDC95164111B84157D8BE0169E35DE5C6F79EA6E1034FE3D7A684F3C5166250"));
@@ -175,9 +188,7 @@ mod tests {
         assert_eq!(usb.getvar_string("S1-root").unwrap(), "S1_Root_e090");
         assert_eq!(usb.getvar_string("Sake-root").unwrap(), "B7DF");
 
-        usb.get_data("Get-root-key-hash").unwrap();
-        assert_eq!(usb.reply.len(), 32);
-        assert_eq!(usb.reply.iter().map(|b| format!("{:02X}", b)).collect::<String>(), "C8D92A2DBA1482588EFF712963329500AC7155CEA8494FDD4B7B180F2F871801");
+        assert_eq!(usb.get_data("Get-root-key-hash ").unwrap().to_hexadecimal_string(), "C8D92A2DBA1482588EFF712963329500AC7155CEA8494FDD4B7B180F2F871801");
 
         assert_eq!(usb.getvar_string("slot-count").unwrap(), "2");
         assert_eq!(usb.getvar_string("current-slot").unwrap(), "a");
@@ -241,15 +252,6 @@ mod tests {
         // }
 
         // transfer_cms(&mut usb, &mut fst, "partitionimage_0").unwrap();
-    }
-
-    #[test]
-    fn test_firmware_history() {
-        let mut usb = get_device().lock().unwrap();
-
-        usb.get_data("Read-TA:2:2475").unwrap();
-
-        println!("{:#?}", usb.reply);
     }
 
 }

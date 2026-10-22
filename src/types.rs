@@ -175,6 +175,7 @@ impl ProgressBar {
         prefix.truncate(PREFIX_LEN);
 
         Self { bar: indicatif::ProgressBar::new(parts)
+            .with_position(0)
             .with_style(ProgressStyle::with_template(template.as_str()).unwrap().progress_chars("#*-"))
             .with_prefix(prefix)
             .with_finish(ProgressFinish::AbandonWithMessage(Cow::Owned(console::style("FAIL").red().to_string())))

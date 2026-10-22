@@ -1,7 +1,7 @@
 use crate::fastboot::{FastbootDevice, Header};
-use crate::types::{ProgressBar, Slot};
+use crate::types::{ByteVec, ProgressBar, Slot};
 use crate::utils::*;
-use anyhow::{Context, anyhow};
+use anyhow::{Context, anyhow, ensure};
 use flate2::read::GzDecoder;
 use log::{debug, error, info};
 use std::fs::File;
@@ -9,140 +9,187 @@ use std::io::{Read, Seek};
 use std::path::Path;
 use tar::{Archive, Entry, EntryType};
 
-pub fn process_sins(
-    usb: &mut FastbootDevice,
-    sin_path: &Path,
-    target_slot: Slot,
-) -> anyhow::Result<()> {
-    let flash_prefix = validate_prefix(sin_path)?;
-
-    let flash_both_slots = flash_prefix == "bootloader" || flash_prefix == "bluetooth" || flash_prefix == "dsp" || flash_prefix == "modem" || flash_prefix == "rdimage";
-
-    process_sins_slot(usb, sin_path, flash_prefix.as_str(), target_slot, flash_both_slots)?;
-
-    // TODO: flashing both slots is just not safe
-    // if flash_both_slots {
-    //     process_sins_slot(usb, sin_path, flash_prefix.as_str(), target_slot.other(), flash_both_slots)?;
-    // }
-
-    Ok(())
+pub struct Sin {
+    pub prefix: String,
+    other: bool,
+    cms: Vec<u8>,
+    chunks: Vec<Vec<u8>>,
 }
 
-fn process_sins_slot(
-    usb: &mut FastbootDevice,
-    sin_path: &Path,
-    flash_prefix: &str,
-    target_slot: Slot,
-    flash_both_slots: bool,
-) -> anyhow::Result<()> {
-    // info!("Processing {}", sin_path.to_string_lossy());
+impl Sin {
+    pub fn open(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+        let path = path.as_ref();
 
-    // TODO: move to main
-    let keep_userdata: bool = true;
+        let prefix = Self::validate_prefix(path)?;
+        let mut cms = Vec::<u8>::new();
+        let mut chunks = Vec::<Vec<u8>>::new();
 
-    let file_name = sin_path.file_name().unwrap().to_string_lossy();
-
-    if keep_userdata && noerase_in_updatexml(sin_path.file_name().unwrap()) {
-        info!("Skipping {}", file_name);
-        return Ok(());
-    }
-
-    let parts = open_sin_archive(&sin_path)?
-        .entries()?
-        .count();
-
-    let prefix = match file_name.split_once('_') {
-        Some((first, _)) => first,
-        None => file_name.as_ref(),
-    };
-
-    let text = if flash_both_slots {
-        format!("Processing {prefix} ({target_slot})")
-    } else {
-        format!("Processing {prefix}")
-    };
-
-    let progress = ProgressBar::new(parts as u64, text);
-
-    let other = sin_path.to_string_lossy().contains("_other");
-
-    // TODO: is this assumption always true?
-    let is_partition_image = flash_prefix.starts_with("partitionimage_");
-
-    let has_slot = !is_partition_image && {
-        let cmd = format!("getvar:has-slot:{flash_prefix}");
-        match usb.command(cmd.as_str()) {
-            Ok(res) => res.data == b"yes",
-            Err(e) => {
-                error!("{e}");
-                false
+        for (i, mut entry) in open_sin_archive(path)?
+            .entries()?
+            .map(|e| e.unwrap())
+            .filter(filter_entry)
+            .enumerate() {
+            match i {
+                0 => {
+                    cms.reserve_exact(entry.size() as usize);
+                    entry.read_to_end(cms.as_mut())?;
+                },
+                _ => {
+                    let mut chunk = Vec::<u8>::with_capacity(entry.size() as usize);
+                    entry.read_to_end(&mut chunk)?;
+                    chunks.push(chunk);
+                }
             }
         }
-    };
 
-    for (i, mut entry) in open_sin_archive(&sin_path)?
-        .entries()?
-        .into_iter()
-        .flatten()
-        .filter(filter_entry)
-        .enumerate() {
-        if i == 0 {
-            usb.download_cms(&mut entry)?;
-        } else {
-            usb.download_tar_entry(&mut entry).with_context(|| format!("Chunk {i} of {parts}"))?;
+        Ok(Self { prefix, other: path.to_str().unwrap().contains("_other"), cms, chunks })
+    }
+
+    pub fn open_all() -> anyhow::Result<Vec<Self>> {
+        let sins = std::fs::read_dir("./")?
+            .filter_map(is_sin_file)
+            .filter(|p| {
+                if noerase_in_updatexml(p.file_name().unwrap()) || p.file_name().unwrap().to_string_lossy().contains("persist") {
+                    info!("Skipping {}", p.display());
+                    return false;
+                }
+                true
+            })
+            .map(Sin::open)
+            .collect::<anyhow::Result<Vec<Self>>>()?;
+        info!("Found {} .sin files", sins.len());
+        Ok(sins)
+    }
+
+    pub fn flash(&self, usb: &mut FastbootDevice, target_slot: Slot) -> anyhow::Result<()> {
+        // let flash_prefix = validate_prefix(sin_path)?;
+
+        // let flash_both_slots = flash_prefix == "bootloader" || flash_prefix == "bluetooth" || flash_prefix == "dsp" || flash_prefix == "modem" || flash_prefix == "rdimage";
+
+        self.process_sins_slot(usb, target_slot, false)?;
+
+        // TODO: flashing both slots is just not safe
+        // if flash_both_slots {
+        //     process_sins_slot(usb, sin_path, flash_prefix.as_str(), target_slot.other(), flash_both_slots)?;
+        // }
+
+        Ok(())
+    }
+
+    fn process_sins_slot(
+        &self,
+        usb: &mut FastbootDevice,
+        target_slot: Slot,
+        flash_both_slots: bool,
+    ) -> anyhow::Result<()> {
+        let prefix = self.prefix.as_str();
+
+        info!("Processing {}", prefix);
+
+        // TODO: is this assumption always true?
+        let is_partition_image = self.prefix.starts_with("partitionimage_");
+
+        let has_slot = !is_partition_image && {
+            let cmd = format!("getvar:has-slot:{prefix}");
+            match usb.command(cmd.as_str()) {
+                Ok(res) => res.data == b"yes",
+                Err(e) => {
+                    error!("{e}");
+                    false
+                }
+            }
+        };
+
+        let parts = 1 + self.chunks.len() as u64;
+        let mut progress = ProgressBar::new(parts, format!("Flashing {prefix} ({target_slot})"));
+
+        self.download_cms(usb)?;
+        progress.inc();
+
+        for (i, chunk) in self.chunks.iter().enumerate() {
+            info!("Downloading sparse chunk {prefix}");
+
+            usb.download(chunk).with_context(|| format!("Failed to transfer {prefix}, chunk {i} of {parts}"))?;
 
             if is_partition_image {
-                let cmd = flash_prefix.replace("partitionimage_", "Repartition:");
+                let cmd = prefix.replace("partitionimage_", "Repartition:");
                 usb.command_expect_header(cmd, Header::Okay)?;
             } else {
-                if i == 1 {
-                    let erase_cmd = match (has_slot, other) {
-                        (false, _) => format!("erase:{flash_prefix}"),
-                        (true, false) => format!("erase:{flash_prefix}_{target_slot}"),
-                        (true, true) => format!("erase:{flash_prefix}_{}", target_slot.other()),
+                if i == 0 {
+                    let erase_cmd = match (has_slot, self.other) {
+                        (false, _) => format!("erase:{prefix}"),
+                        (true, false) => format!("erase:{prefix}_{target_slot}"),
+                        (true, true) => format!("erase:{prefix}_{}", target_slot.other()),
                     };
                     usb.command_expect_header(erase_cmd, Header::Okay)?;
                 }
 
-                let flash_cmd = match (has_slot, other) {
-                    (false, _) => format!("flash:{flash_prefix}"),
-                    (true, false) => format!("flash:{flash_prefix}_{target_slot}"),
-                    (true, true) => format!("flash:{flash_prefix}_{}", target_slot.other()),
+                let flash_cmd = match (has_slot, self.other) {
+                    (false, _) => format!("flash:{prefix}"),
+                    (true, false) => format!("flash:{prefix}_{target_slot}"),
+                    (true, true) => format!("flash:{prefix}_{}", target_slot.other()),
                 };
                 usb.command_expect_header(flash_cmd, Header::Okay)?;
             }
+
+            progress.inc();
         }
-        progress.set_position(i as u64);
+
+        progress.okay();
+
+        Ok(())
     }
 
-    progress.okay();
+    /// Attempts to write cms to device
+    fn download_cms(&self, dev: &mut FastbootDevice) -> anyhow::Result<()> {
+        // let entry_name = tar_entry_header_name(entry)?;
+        info!("Downloading signature {}", self.prefix);
 
-    Ok(())
-}
+        let hex_len = ByteVec::from_len(self.cms.len() as u32);
 
-fn validate_prefix(sin_path: &Path) -> anyhow::Result<String> {
-    let mut archive = open_sin_archive(&sin_path)?;
+        let mut res = dev.command(format!("signature:{hex_len}"))?;
 
-    let mut prefix_iter = archive.entries()?
-        .flatten()
-        .filter(|e| filter_entry(e))
-        .map(|entry| {
-            // ensure!(entry.size() != 0, "Tar entry contained 0 bytes!");
-            let name = tar_entry_header_name(&entry).ok()?;
-            Some(Path::new(name).with_extension(""))
-        })
-        .into_iter();
+        let is_2021_device: bool = res.header == Header::Fail;
+        if is_2021_device {
+            info!("device from 2021 and up?");
+            res = dev.command(format!("download:{hex_len}"))?;
+        }
 
-    let flash_prefix = match prefix_iter.next().flatten() {
-        Some(prefix) => prefix,
-        None => return Err(anyhow!("Empty tar entry name!"))
-    };
+        ensure!(hex_len == res.data, "Invalid DATA reply string, Expected {hex_len}, received {}", res.data);
 
-    if !prefix_iter.all(|opt| opt.map(|s| s == flash_prefix).unwrap_or(false)) {
-        return Err(anyhow!("Mismatched tar entry name!"));
+        let _ = dev.write_and_expect_header(&self.cms, Header::Okay).context("Failed to write cms! cms is possibly corrupt.")?;
+
+        if is_2021_device {
+            let _ = dev.write_and_expect_header("signature", Header::Okay)?;
+        }
+
+        Ok(())
     }
 
-    Ok(flash_prefix.to_str().ok_or_else(|| anyhow!("Invalid UTF-8 in sin archive entry prefix!"))?.to_string())
+    fn validate_prefix(path: &Path) -> anyhow::Result<String> {
+        let mut archive = open_sin_archive(&path)?;
+
+        let mut prefix_iter = archive.entries()?
+            .map(|e| e.unwrap())
+            .filter(filter_entry)
+            .map(|entry| {
+                // ensure!(entry.size() != 0, "Tar entry contained 0 bytes!");
+                let name = tar_entry_header_name(&entry).ok()?;
+                Some(Path::new(name).with_extension(""))
+            })
+            .into_iter();
+
+        let flash_prefix = match prefix_iter.next().flatten() {
+            Some(prefix) => prefix,
+            None => return Err(anyhow!("Empty tar entry name!"))
+        };
+
+        if !prefix_iter.all(|opt| opt.map(|s| s == flash_prefix).unwrap_or(false)) {
+            return Err(anyhow!("Mismatched tar entry name!"));
+        }
+
+        Ok(flash_prefix.to_str().ok_or_else(|| anyhow!("Invalid UTF-8 in sin archive entry prefix!"))?.to_string())
+    }
 }
 
 fn open_sin_archive(sin_path: &Path) -> anyhow::Result<Archive<Box<dyn Read>>> {

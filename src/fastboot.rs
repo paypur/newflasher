@@ -180,76 +180,6 @@ impl FastbootDevice {
         res.expect_header(expected)
     }
 
-    /// Attempts to write cms to device
-    pub fn download_cms(&mut self, entry: &mut Entry<Box<dyn Read>>) -> anyhow::Result<()> {
-        let entry_name = tar_entry_header_name(entry)?;
-        info!("Downloading signature {entry_name}");
-
-        let hex_len = ByteVec::from_len(entry.size() as u32);
-
-        let mut res = self.command(format!("signature:{hex_len}"))?;
-
-        let is_2021_device: bool = res.header == Header::Fail;
-        if is_2021_device {
-            info!("device from 2021 and up?");
-            res = self.command(format!("download:{hex_len}"))?;
-        }
-
-        ensure!(hex_len == res.data, "Invalid DATA reply string, Expected {hex_len}, received {}", res.data);
-
-        let mut buf = vec![];
-        entry.read_to_end(&mut buf)?;
-        let _ = self.write_and_expect_header(&buf, Header::Okay).context("Failed to write cms! cms is possibly corrupt.")?;
-
-        if is_2021_device {
-            let _ = self.write_and_expect_header("signature", Header::Okay)?;
-        }
-
-        Ok(())
-    }
-
-    /// Attempts to write tar entry to device
-    pub fn download_tar_entry(&mut self, entry: &mut Entry<Box<dyn Read>>) -> anyhow::Result<()> {
-        const LIMIT: u64 = 0x200000;
-
-        let entry_name = tar_entry_header_name(entry)?.to_owned();
-        info!("Downloading sparse chunk {entry_name}");
-
-        let mut f = || -> anyhow::Result<()> {
-            let hex_len = ByteVec::from_len(entry.size() as u32);
-            let cmd = format!("download:{hex_len}");
-
-            let _ = self.command_expect(cmd, Header::Data, hex_len)?;
-
-            let mut buffer = Vec::<u8>::with_capacity(LIMIT as usize);
-            let mut adapter = entry.take(LIMIT);
-
-            loop {
-                buffer.clear();
-                adapter.read_to_end(&mut buffer)?;
-
-                if buffer.is_empty() {
-                    break;
-                }
-
-                self.writer.write_all(&buffer)?;
-                trace!("WRITE[0x{:X}]:skip", buffer.len());
-
-                adapter.set_limit(LIMIT);
-            }
-
-            // TODO: should this be flush_end?
-            self.writer.flush()?;
-
-            let response = self.read_and_parse()?;
-            let _ = response.expect_header(Header::Okay)?;
-
-            Ok(())
-        };
-
-        f().with_context(|| format!("Failed to transfer {entry_name}"))
-    }
-
     /// Attempts to write a buffer to device
     pub fn download(&mut self, data: impl AsRef<[u8]>) -> anyhow::Result<()> {
         let len = data.as_ref().len();
@@ -262,25 +192,25 @@ impl FastbootDevice {
         Ok(())
     }
 
+    pub fn write_and_expect_header(&mut self, cmd: impl AsRef<[u8]>, expected: Header) -> anyhow::Result<ByteVec> {
+        self.write_and_read_reply(cmd)?.expect_header(expected)
+    }
+
     pub fn write_and_read_reply(&mut self, cmd: impl AsRef<[u8]>) -> anyhow::Result<Response> {
         self.write(cmd)?;
         self.read_and_parse()
     }
 
-    pub fn write_and_expect_header(&mut self, cmd: impl AsRef<[u8]>, expected: Header) -> anyhow::Result<ByteVec> {
-        let response = self.write_and_read_reply(cmd)?;
-        response.expect_header(expected)
-    }
-
-    pub fn write(&mut self, data: impl AsRef<[u8]>) -> anyhow::Result<usize> {
+    fn write(&mut self, data: impl AsRef<[u8]>) -> anyhow::Result<usize> {
         let bytes = data.as_ref();
         trace_formatted_hex("WRITE", bytes);
 
         self.writer.write_all(bytes)?;
-        let r = self.writer.flush_end();
 
-        if let Err(e) = r && e.kind() == ErrorKind::TimedOut {
+        if let Err(e) = self.writer.flush() {
             match e.kind() {
+                ErrorKind::ConnectionAborted => panic!("{}", e),
+                // can be caused by writing commands consecutively without reading in between
                 ErrorKind::TimedOut => {
                     eprintln!("Flush timed out.");
 
@@ -289,14 +219,14 @@ impl FastbootDevice {
                     std::io::copy(&mut short_reader, &mut std::io::sink())?;
                     short_reader.consume_end()?;
                 },
-                _ => return Err(e)?
+                _ => return Err(e.into())
             }
         };
 
         Ok(bytes.len())
     }
 
-    /// Strips reply header from self.reply
+    /// Read and parse fastboot header from response
     pub fn read_and_parse(&mut self) -> anyhow::Result<Response> {
         let mut vec = self.read()?;
         trace_formatted_hex("READ", vec.as_slice());
