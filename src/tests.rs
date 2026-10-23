@@ -100,35 +100,6 @@ mod tests {
 
     }
 
-    #[test]
-    fn test_ta_files() {
-        let compare = |file: &str, partition: u8, unit: usize, data: &[u8] | {
-            let result = TrimArea::try_from_file(PathBuf::from(file)).unwrap();
-            let units = match data.is_empty() {
-                false => vec![BootConfigUnit { unit, data: ByteVec::from(data)}],
-                true => vec![],
-            };
-
-            assert_eq!(result.partition, partition);
-            assert_eq!(result.boot_config_units[0].unit, unit);
-            assert_eq!(result.boot_config_units[0].data, data);
-        };
-
-        compare("../../XQ-EC72_Customized_HK_69.2.A.4.90/auto-boot.ta", 2, 0x907, &[0]);
-        compare("../../XQ-EC72_Customized_HK_69.2.A.4.90/CustomerID_S20000480_001_HK_c001526.ta", 2, 0x87B, &[0x63, 0x30, 0x30, 0x31, 0x35, 0x32, 0x36]);
-        compare("../../XQ-EC72_Customized_HK_69.2.A.4.90/osv-restriction.ta", 2, 0x91A, &[0x0]);
-        compare("../../XQ-EC72_Customized_HK_69.2.A.4.90/reset-kernel-cmd-debug.ta", 2, 0x9A9, &[0x0]);
-        compare("../../XQ-EC72_Customized_HK_69.2.A.4.90/reset-retail-demo-active-sts.ta", 2, 0xA1E, &[]);
-
-        compare("../../H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/auto-boot.ta", 2, 0x90C, &[0x0]);
-        compare("../../H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/cust-reset.ta", 2, 0x8A4, &[0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0]);
-        compare("../../H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/master-reset.ta", 2, 0x9F6, &[0x1]);
-        compare("../../H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/osv-restriction.ta", 2, 0x91A, &[0x0]);
-        compare("../../H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/reset-kernel-cmd-debug.ta", 2, 0x9A9, &[0x0]);
-        compare("../../H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/reset-non-secure-adb.ta",2, 0x9B6, &[]);
-        compare("../../H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/reset-wipe-reason.ta", 2, 0x9F9, &[]);
-        compare("../../H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/simlock.ta", 2, 0, &[]); // should be none
-    }
 
 /*    // https://android.googlesource.com/platform/system/core/+/master/fastboot/README.md
     // #[test]

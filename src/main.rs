@@ -81,7 +81,7 @@ fn main() {
     let partition = xml::partition_delivery().unwrap();
     let sins = Sin::open_all_cwd().unwrap();
     let boot = xml::boot_delivery(Some(&root_key_hash)).unwrap();
-    let boot_ta = TrimArea::try_from_file(PathBuf::from("./boot").join(&boot.boot_config)).unwrap();
+    let boot_ta = TrimArea::parse_file(PathBuf::from("./boot").join(&boot.boot_config)).unwrap();
 
     println!("Active Slot: {current_slot}");
     println!("Ready to flash device, press any key to continue ...");
