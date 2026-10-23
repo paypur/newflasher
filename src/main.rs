@@ -1,8 +1,8 @@
 use crate::fastboot::FastbootDevice;
-use crate::sins::Sin;
+use crate::sin::Sin;
 use crate::ta::TrimArea;
 use crate::types::Slot;
-use crate::xml_parser::BootConfiguration;
+use crate::xml::BootConfiguration;
 use anyhow::Context;
 use std::io::{Read, stdin};
 use std::path::PathBuf;
@@ -11,8 +11,8 @@ use std::process::exit;
 pub mod tests;
 pub mod types;
 pub mod utils;
-pub mod sins;
-pub mod xml_parser;
+pub mod sin;
+pub mod xml;
 pub mod ta;
 mod fastboot;
 
@@ -78,9 +78,9 @@ fn main() {
 
     /* parse relevant files first */
     let tas = ta::parse_all().unwrap();
-    let partition = xml_parser::partition_delivery().unwrap().iter().map(|p| Sin::open(p).unwrap()).collect();
-    let sins = Sin::open_all().unwrap();
-    let boot = xml_parser::boot_delivery(&root_key_hash).unwrap();
+    let partition = xml::partition_delivery().unwrap();
+    let sins = Sin::open_all_cwd().unwrap();
+    let boot = xml::boot_delivery(Some(&root_key_hash)).unwrap();
     let boot_ta = TrimArea::try_from_file(PathBuf::from("./boot").join(&boot.boot_config)).unwrap();
 
     println!("Active Slot: {current_slot}");
@@ -140,9 +140,7 @@ fn flash_boot(dev: &mut FastbootDevice, boot: BootConfiguration, boot_ta: TrimAr
     boot_ta.flash(dev).unwrap();
 
     // seems to be just one file
-    for img in &boot.boot_images {
-        let path = PathBuf::from("./boot").join(img);
-        let sin = Sin::open(path).unwrap();
+    for sin in &boot.boot_images {
         sin.flash(dev, slot).with_context(|| format!("Failed to flash {}", sin.prefix)).unwrap();
     }
 }

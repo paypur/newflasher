@@ -7,8 +7,9 @@ use log::{info, trace};
 use xml::attribute::OwnedAttribute;
 use xml::reader::XmlEvent;
 use xml::ParserConfig;
+use crate::sin::Sin;
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct BootConfiguration {
     pub _space_id: String,
     pub _name: String,
@@ -16,7 +17,7 @@ pub struct BootConfiguration {
     pub plf_root_hash: String,
     pub hw_config_rev: String,
     pub boot_config: String,
-    pub boot_images: Vec<String>,
+    pub boot_images: Vec<Sin>,
 }
 
 impl BootConfiguration {
@@ -33,19 +34,19 @@ struct BootConfigurationBuilder {
     plf_root_hash: Option<String>,
     hw_config_rev: Option<String>,
     boot_config: Option<String>,
-    boot_images: Vec<String>,
+    boot_images: Vec<PathBuf>,
 }
 
 impl BootConfigurationBuilder {
-    pub fn build(self) -> Option<BootConfiguration> {
-        Some(BootConfiguration {
-            _space_id: self.space_id?,
-            _name: self.name?,
+    pub fn build(self) -> anyhow::Result<BootConfiguration> {
+        Ok(BootConfiguration {
+            _space_id: self.space_id.ok_or_else(|| anyhow!("Missing space_id"))?,
+            _name: self.name.ok_or_else(|| anyhow!("Missing name"))?,
             _platform_id: self.platform_id,
-            plf_root_hash: self.plf_root_hash?,
-            hw_config_rev: self.hw_config_rev?,
-            boot_config: self.boot_config?,
-            boot_images: self.boot_images,
+            plf_root_hash: self.plf_root_hash.ok_or_else(|| anyhow!("Missing plf_root_hash"))?,
+            hw_config_rev: self.hw_config_rev.ok_or_else(|| anyhow!("Missing hw_config_rev"))?,
+            boot_config: self.boot_config.ok_or_else(|| anyhow!("Missing boot_config"))?,
+            boot_images: Sin::open_all(self.boot_images)?,
         })
     }
 }
@@ -65,7 +66,7 @@ const VALUE_ATTRIBUTE: &str = "VALUE";
 const REVISION_ATTRIBUTE: &str = "REVISION";
 const PATH_ATTRIBUTE: &str = "PATH";
 
-pub fn boot_delivery(root_key_hash: &str) -> anyhow::Result<BootConfiguration> {
+pub fn boot_delivery(root_key_hash: Option<&str>) -> anyhow::Result<BootConfiguration> {
     let boot_delivery_file = File::open("boot/boot_delivery.xml").context("Failed to open boot_delivery.xml")?;
     let reader = ParserConfig::default().create_reader(BufReader::new(boot_delivery_file));
 
@@ -107,7 +108,9 @@ pub fn boot_delivery(root_key_hash: &str) -> anyhow::Result<BootConfiguration> {
                             if let Some(cap) = Regex::new(r#"(PLATFORM_ID="[0-9A-F]{8}";)?PLF_ROOT_HASH="([0-9A-F]{96}|[0-9A-F]{64}|[0-9A-F]{48})"#)?.captures(val.as_str()) {
                                 if let Some(m) = cap.get(2) {
                                     let str = m.as_str();
-                                    ensure!(root_key_hash.starts_with(str), "PLF_ROOT_HASH does not match! Expected {root_key_hash}, got {str}.");
+                                    if let Some(rkh) = root_key_hash {
+                                        ensure!(rkh.starts_with(str), "PLF_ROOT_HASH does not match! Expected {rkh}, got {str}.");
+                                    }
                                     config.plf_root_hash = Some(str.to_owned());
                                 }
                             } else {
@@ -127,7 +130,7 @@ pub fn boot_delivery(root_key_hash: &str) -> anyhow::Result<BootConfiguration> {
                     if element_stack.last().is_some_and(|e| e == BOOT_IMAGES_ELEMENT) {
                         if name.local_name == FILE_ELEMENT {
                             if let Some(path) = attribute_value(&attrs, PATH_ATTRIBUTE) {
-                                config.boot_images.push(path);
+                                config.boot_images.push(Path::new("./boot").join(path));
                             }
                         }
                     }
@@ -149,9 +152,7 @@ pub fn boot_delivery(root_key_hash: &str) -> anyhow::Result<BootConfiguration> {
                 pop_element(&mut element_stack, &name.local_name)?;
 
                 if name.local_name == CONFIGURATION_ELEMENT {
-                    let d = format!("{config:#?}");
-                    let bc = config.build()
-                                   .ok_or(anyhow!("Boot Configuration is missing required fields!\n {d}"))?;
+                    let bc = config.build().context("Boot Configuration is missing required fields!")?;
 
                     info!("Found {} configuration in boot.xml", bc._name);
 
@@ -165,7 +166,7 @@ pub fn boot_delivery(root_key_hash: &str) -> anyhow::Result<BootConfiguration> {
     Err(anyhow!("No commercial boot configuration found!"))
 }
 
-pub fn partition_delivery() -> anyhow::Result<Vec<PathBuf>> {
+pub fn partition_delivery() -> anyhow::Result<Vec<Sin>> {
     let partition_delivery_file = File::open("partition/partition_delivery.xml").context("Failed to open partition_delivery.xml")?;
     let reader = ParserConfig::default().create_reader(BufReader::new(partition_delivery_file));
 
@@ -197,9 +198,9 @@ pub fn partition_delivery() -> anyhow::Result<Vec<PathBuf>> {
         }
     }
 
-    info!("Found {} partition files", partition_paths.len());
-
-    Ok(partition_paths)
+    let sins = Sin::open_all(partition_paths)?;
+    info!("Found {} partition files", sins.len());
+    Ok(sins)
 }
 
 fn pop_element(element_stack: &mut Vec<String>, ended_name: &str) -> anyhow::Result<()> {

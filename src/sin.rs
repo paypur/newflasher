@@ -3,10 +3,12 @@ use crate::types::{ByteVec, ProgressBar, Slot};
 use crate::utils::*;
 use anyhow::{Context, anyhow, ensure};
 use flate2::read::GzDecoder;
+use indicatif::{ProgressIterator, ProgressStyle};
 use log::{debug, error, info};
+use std::fs;
 use std::fs::File;
 use std::io::{Read, Seek};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tar::{Archive, Entry, EntryType};
 
 pub struct Sin {
@@ -45,9 +47,15 @@ impl Sin {
         Ok(Self { prefix, other: path.to_str().unwrap().contains("_other"), cms, chunks })
     }
 
-    pub fn open_all() -> anyhow::Result<Vec<Self>> {
-        let sins = std::fs::read_dir("./")?
-            .filter_map(is_sin_file)
+    pub fn open_all_cwd() -> anyhow::Result<Vec<Self>> {
+        let sins = Sin::open_all(fs::read_dir("./")?.filter_map(is_sin_file).collect())?;
+        info!("Found {} .sin files", sins.len());
+        Ok(sins)
+    }
+
+    pub fn open_all(paths: Vec<PathBuf>) -> anyhow::Result<Vec<Self>> {
+        let files = paths
+            .iter()
             .filter(|p| {
                 if noerase_in_updatexml(p.file_name().unwrap()) || p.file_name().unwrap().to_string_lossy().contains("persist") {
                     info!("Skipping {}", p.display());
@@ -55,10 +63,12 @@ impl Sin {
                 }
                 true
             })
-            .map(Sin::open)
-            .collect::<anyhow::Result<Vec<Self>>>()?;
-        info!("Found {} .sin files", sins.len());
-        Ok(sins)
+            .collect::<Vec<_>>();
+
+        files.iter()
+             .progress_with_style(ProgressStyle::default_bar().progress_chars("#*-"))
+             .map(Sin::open)
+             .collect::<anyhow::Result<Vec<Self>>>()
     }
 
     pub fn flash(&self, usb: &mut FastbootDevice, target_slot: Slot) -> anyhow::Result<()> {

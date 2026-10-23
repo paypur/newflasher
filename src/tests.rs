@@ -10,7 +10,7 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::{Mutex, OnceLock};
     use tar::Archive;
-    use crate::sins::Sin;
+    use crate::sin::Sin;
 
     #[repr(C)]
     #[derive(PartialEq, Debug)]
@@ -40,9 +40,9 @@ mod tests {
 
     fn parse_files() {
         let _tas = ta::parse_all().unwrap();
-        let _partition = xml_parser::partition_delivery().unwrap();
-        let _sins = Sin::open_all().unwrap();
-        let _boot = xml_parser::boot_delivery(&std::env::var("ROOT_KEY_HASH").unwrap()).unwrap();
+        let _partition = xml::partition_delivery().unwrap();
+        let _sins = Sin::open_all_cwd().unwrap();
+        let _boot = xml::boot_delivery(None).unwrap();
         let _boot_ta = TrimArea::try_from_file(PathBuf::from("./boot").join(&_boot.boot_config)).unwrap();
     }
 
