@@ -7,6 +7,7 @@ use log::{info, trace};
 use xml::attribute::OwnedAttribute;
 use xml::reader::XmlEvent;
 use xml::ParserConfig;
+use crate::sin;
 use crate::sin::Sin;
 
 #[derive(Default)]
@@ -46,7 +47,7 @@ impl BootConfigurationBuilder {
             plf_root_hash: self.plf_root_hash.ok_or_else(|| anyhow!("Missing plf_root_hash"))?,
             hw_config_rev: self.hw_config_rev.ok_or_else(|| anyhow!("Missing hw_config_rev"))?,
             boot_config: self.boot_config.ok_or_else(|| anyhow!("Missing boot_config"))?,
-            boot_images: Sin::open_all(self.boot_images)?,
+            boot_images: sin::parse_all(self.boot_images)?,
         })
     }
 }
@@ -198,7 +199,7 @@ pub fn partition_delivery() -> anyhow::Result<Vec<Sin>> {
         }
     }
 
-    let sins = Sin::open_all(partition_paths)?;
+    let sins = sin::parse_all(partition_paths)?;
     info!("Found {} partition files", sins.len());
     Ok(sins)
 }

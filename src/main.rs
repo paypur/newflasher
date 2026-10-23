@@ -79,7 +79,7 @@ fn main() {
     /* parse relevant files first */
     let tas = ta::parse_all().unwrap();
     let partition = xml::partition_delivery().unwrap();
-    let sins = Sin::open_all_cwd().unwrap();
+    let sins = sin::parse_all_cwd().unwrap();
     let boot = xml::boot_delivery(Some(&root_key_hash)).unwrap();
     let boot_ta = TrimArea::parse_file(PathBuf::from("./boot").join(&boot.boot_config)).unwrap();
 

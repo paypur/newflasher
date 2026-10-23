@@ -47,30 +47,6 @@ impl Sin {
         Ok(Self { prefix, other: path.to_str().unwrap().contains("_other"), cms, chunks })
     }
 
-    pub fn open_all_cwd() -> anyhow::Result<Vec<Self>> {
-        let sins = Sin::open_all(fs::read_dir("./")?.filter_map(is_sin_file).collect())?;
-        info!("Found {} .sin files", sins.len());
-        Ok(sins)
-    }
-
-    pub fn open_all(paths: Vec<PathBuf>) -> anyhow::Result<Vec<Self>> {
-        let files = paths
-            .iter()
-            .filter(|p| {
-                if noerase_in_updatexml(p.file_name().unwrap()) || p.file_name().unwrap().to_string_lossy().contains("persist") {
-                    info!("Skipping {}", p.display());
-                    return false;
-                }
-                true
-            })
-            .collect::<Vec<_>>();
-
-        files.iter()
-             .progress_with_style(ProgressStyle::default_bar().progress_chars("#*-"))
-             .map(Sin::open)
-             .collect::<anyhow::Result<Vec<Self>>>()
-    }
-
     pub fn flash(&self, usb: &mut FastbootDevice, target_slot: Slot) -> anyhow::Result<()> {
         // let flash_prefix = validate_prefix(sin_path)?;
 
@@ -200,6 +176,30 @@ impl Sin {
 
         Ok(flash_prefix.to_str().ok_or_else(|| anyhow!("Invalid UTF-8 in sin archive entry prefix!"))?.to_string())
     }
+}
+
+pub fn parse_all_cwd() -> anyhow::Result<Vec<Sin>> {
+    let sins = parse_all(fs::read_dir("./")?.filter_map(is_sin_file).collect())?;
+    info!("Found {} .sin files", sins.len());
+    Ok(sins)
+}
+
+pub fn parse_all(paths: Vec<PathBuf>) -> anyhow::Result<Vec<Sin>> {
+    let files = paths
+        .iter()
+        .filter(|p| {
+            if noerase_in_updatexml(p.file_name().unwrap()) || p.file_name().unwrap().to_string_lossy().contains("persist") {
+                info!("Skipping {}", p.display());
+                return false;
+            }
+            true
+        })
+        .collect::<Vec<_>>();
+
+    files.iter()
+         // .progress_with_style(ProgressStyle::default_bar().progress_chars("#*-"))
+         .map(Sin::open)
+         .collect::<anyhow::Result<Vec<Sin>>>()
 }
 
 fn open_sin_archive(sin_path: &Path) -> anyhow::Result<Archive<Box<dyn Read>>> {

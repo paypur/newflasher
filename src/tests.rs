@@ -41,9 +41,9 @@ mod tests {
     fn parse_files() {
         let _tas = ta::parse_all().unwrap();
         let _partition = xml::partition_delivery().unwrap();
-        let _sins = Sin::open_all_cwd().unwrap();
+        let _sins = sin::parse_all_cwd().unwrap();
         let _boot = xml::boot_delivery(None).unwrap();
-        let _boot_ta = TrimArea::try_from_file(PathBuf::from("./boot").join(&_boot.boot_config)).unwrap();
+        let _boot_ta = TrimArea::parse_file(PathBuf::from("./boot").join(&_boot.boot_config)).unwrap();
     }
 
     #[test]
