@@ -26,18 +26,14 @@ impl Slot {
     }
 }
 
-impl From<String> for Slot {
-    fn from(value: String) -> Self {
-        value.as_str().into()
-    }
-}
+impl TryFrom<String> for Slot {
+    type Error = anyhow::Error;
 
-impl From<&str> for Slot {
-    fn from(value: &str) -> Self {
-        match value {
-            "a" | "A" => Slot::A,
-            "b" | "B" => Slot::B,
-            _ => panic!("Invalid slot: {}", value)
+    fn try_from(value: String) -> anyhow::Result<Self> {
+        match value.as_str() {
+            "a" | "A" => Ok(Slot::A),
+            "b" | "B" => Ok(Slot::B),
+            _ => Err(anyhow!("Invalid slot: {}", value))
         }
     }
 }

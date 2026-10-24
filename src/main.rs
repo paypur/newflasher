@@ -65,7 +65,7 @@ fn main() {
     let root_key_hash = dev.get_data("Get-root-key-hash").unwrap().to_hexadecimal_string();
 
     let _slot_count = dev.getvar_u32("slot-count").unwrap_or(1);
-    let current_slot: Slot = dev.getvar_string("current-slot").unwrap().into();
+    let current_slot: Slot = dev.getvar_string("current-slot").unwrap().try_into().unwrap();
     let other_slot = current_slot.other();
     let battery = dev.getvar_u32("Battery").unwrap();
 
