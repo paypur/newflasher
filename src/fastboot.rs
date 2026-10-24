@@ -1,13 +1,12 @@
 use crate::types::{ByteVec, Slot};
-use crate::utils::{tar_entry_header_name, trace_formatted_hex};
-use anyhow::{ensure, Context};
-use log::{debug, info, trace};
+use crate::utils::trace_formatted_hex;
+use anyhow::{Context, ensure};
+use log::{debug, info};
 use nusb::io::{EndpointRead, EndpointWrite};
 use nusb::transfer::{Bulk, In, Out};
 use nusb::{Device, Interface, MaybeFuture};
 use std::io::{ErrorKind, Read, Write};
 use std::time::Duration;
-use tar::Entry;
 
 pub struct Response {
     pub header: Header,
@@ -63,12 +62,12 @@ pub struct FastbootDevice {
 }
 
 impl FastbootDevice {
-    pub fn new() -> Self {
+    pub fn open() -> Self {
         let info = nusb::list_devices()
             .wait()
             .unwrap()
             .find(|d| d.vendor_id() == VID && d.product_id() == PID)
-            .expect("Failed to find device at /dev/bus/usb! Device should be connected via flash mode (green *)");
+            .expect("Failed to find device! Device should be connected via flash mode (green *)");
 
         info!("USB device connected at {:?} speed", info.speed());
 

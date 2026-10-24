@@ -24,7 +24,7 @@ mod tests {
     static DEVICE: OnceLock<Mutex<FastbootDevice>> = OnceLock::new();
 
     fn get_device() -> &'static Mutex<FastbootDevice> {
-        DEVICE.get_or_init(|| Mutex::new(FastbootDevice::new()))
+        DEVICE.get_or_init(|| Mutex::new(FastbootDevice::open()))
     }
 
     fn test_in_dir(dir: impl AsRef<Path>, f: impl Fn()) {
@@ -43,7 +43,6 @@ mod tests {
         let _partition = xml::partition_delivery().unwrap();
         let _sins = sin::parse_all_cwd().unwrap();
         let _boot = xml::boot_delivery(None).unwrap();
-        let _boot_ta = TrimArea::parse_file(PathBuf::from("./boot").join(&_boot.boot_config)).unwrap();
     }
 
     #[test]

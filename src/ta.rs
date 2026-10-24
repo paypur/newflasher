@@ -113,11 +113,11 @@ impl TrimArea {
 
 pub fn parse_all() -> anyhow::Result<Vec<TrimArea>> {
     let tas = fs::read_dir("./").unwrap()
-                                .filter_map(is_ta_file)
-                                .filter(|path| !noerase_in_updatexml(path.file_name().unwrap()))
-                                .map(TrimArea::parse_file)
-                                .collect::<Result<Vec<_>, _>>()
-                                .context("All .ta files could not be successfully parsed!")?;
+        .filter_map(is_ta_file)
+        .filter(|path| !noerase_in_updatexml(path.file_name().unwrap()))
+        .map(TrimArea::parse_file)
+        .collect::<Result<Vec<_>, _>>()
+        .context("All .ta files could not be successfully parsed!")?;
 
     ensure!(!tas.is_empty(), "No .ta files found!");
     info!("Found {} .ta files", tas.len());

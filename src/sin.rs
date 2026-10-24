@@ -3,7 +3,6 @@ use crate::types::{ByteVec, ProgressBar, Slot};
 use crate::utils::*;
 use anyhow::{Context, anyhow, ensure};
 use flate2::read::GzDecoder;
-use indicatif::{ProgressIterator, ProgressStyle};
 use log::{debug, error, info};
 use std::fs;
 use std::fs::File;
@@ -185,8 +184,7 @@ pub fn parse_all_cwd() -> anyhow::Result<Vec<Sin>> {
 }
 
 pub fn parse_all(paths: Vec<PathBuf>) -> anyhow::Result<Vec<Sin>> {
-    let files = paths
-        .iter()
+    paths.iter()
         .filter(|p| {
             if noerase_in_updatexml(p.file_name().unwrap()) || p.file_name().unwrap().to_string_lossy().contains("persist") {
                 info!("Skipping {}", p.display());
@@ -194,12 +192,8 @@ pub fn parse_all(paths: Vec<PathBuf>) -> anyhow::Result<Vec<Sin>> {
             }
             true
         })
-        .collect::<Vec<_>>();
-
-    files.iter()
-         // .progress_with_style(ProgressStyle::default_bar().progress_chars("#*-"))
-         .map(Sin::open)
-         .collect::<anyhow::Result<Vec<Sin>>>()
+        .map(Sin::open)
+        .collect::<anyhow::Result<Vec<Sin>>>()
 }
 
 fn open_sin_archive(sin_path: &Path) -> anyhow::Result<Archive<Box<dyn Read>>> {

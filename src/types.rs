@@ -186,6 +186,12 @@ impl ProgressBar {
         self.bar.set_position(pos);
     }
 
+    pub fn step<T, E>(&mut self, f: impl FnOnce() -> Result<T, E>) -> Result<T, E> {
+        let value = f()?;
+        self.inc();
+        Ok(value)
+    }
+    
     pub fn okay(self) {
         self.bar.finish_with_message(console::style("OKAY").green().to_string())
     }

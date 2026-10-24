@@ -9,15 +9,15 @@ use xml::reader::XmlEvent;
 use xml::ParserConfig;
 use crate::sin;
 use crate::sin::Sin;
+use crate::ta::TrimArea;
 
-#[derive(Default)]
 pub struct BootConfiguration {
     pub _space_id: String,
     pub _name: String,
     pub _platform_id: Option<String>,
     pub plf_root_hash: String,
     pub hw_config_rev: String,
-    pub boot_config: String,
+    pub boot_config: TrimArea,
     pub boot_images: Vec<Sin>,
 }
 
@@ -46,7 +46,7 @@ impl BootConfigurationBuilder {
             _platform_id: self.platform_id,
             plf_root_hash: self.plf_root_hash.ok_or_else(|| anyhow!("Missing plf_root_hash"))?,
             hw_config_rev: self.hw_config_rev.ok_or_else(|| anyhow!("Missing hw_config_rev"))?,
-            boot_config: self.boot_config.ok_or_else(|| anyhow!("Missing boot_config"))?,
+            boot_config: TrimArea::parse_file(PathBuf::from("boot").join(self.boot_config.ok_or_else(|| anyhow!("Missing boot_config"))?))?,
             boot_images: sin::parse_all(self.boot_images)?,
         })
     }

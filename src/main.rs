@@ -1,12 +1,10 @@
 use crate::fastboot::FastbootDevice;
 use crate::sin::Sin;
 use crate::ta::TrimArea;
-use crate::types::Slot;
+use crate::types::{ProgressBar, Slot};
 use crate::xml::BootConfiguration;
 use anyhow::Context;
 use std::io::{Read, stdin};
-use std::path::PathBuf;
-use std::process::exit;
 
 pub mod tests;
 pub mod types;
@@ -25,16 +23,15 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() < 2 {
-        eprintln!("Missing directory argument");
-        exit(1);
+        panic!("Missing directory argument");
     }
 
     std::env::set_current_dir(args[1].as_str()).unwrap();
 
-    let mut dev = FastbootDevice::new();
+    let mut dev = FastbootDevice::open();
 
     /* fastboot variables */
-    let max_download_size = dev.getvar_u32("max-download-size").unwrap();
+    let _max_download_size = dev.getvar_u32("max-download-size").unwrap();
     let product = dev.getvar_string("product").unwrap();
 
     // basic checks that these files are for the correct device
@@ -77,11 +74,12 @@ fn main() {
     }
 
     /* parse relevant files first */
-    let tas = ta::parse_all().unwrap();
-    let partition = xml::partition_delivery().unwrap();
-    let sins = sin::parse_all_cwd().unwrap();
-    let boot = xml::boot_delivery(Some(&root_key_hash)).unwrap();
-    let boot_ta = TrimArea::parse_file(PathBuf::from("./boot").join(&boot.boot_config)).unwrap();
+    let mut bar = ProgressBar::new(4, "Parsing firmware files");
+    let sins = bar.step(|| sin::parse_all_cwd()).unwrap();
+    let tas = bar.step(|| ta::parse_all()).unwrap();
+    let boot = bar.step(|| xml::boot_delivery(Some(&root_key_hash))).unwrap();
+    let partition = bar.step(|| xml::partition_delivery()).unwrap();
+    bar.okay();
 
     println!("Active Slot: {current_slot}");
     println!("Ready to flash device, press any key to continue ...");
@@ -97,14 +95,15 @@ fn main() {
 
     flash_sins(&mut dev, sins, other_slot);
     flash_trim_areas(&mut dev, tas);
-    flash_boot(&mut dev, boot, boot_ta, other_slot);
+    flash_boot(&mut dev, boot, other_slot);
     flash_partitions(&mut dev, partition, other_slot);
 
     // print_firmware_history(&mut usb).unwrap();
 
-    dev.set_active_slot(other_slot);
     dev.exit_flash_mode();
     dev.sync();
+
+    dev.set_active_slot(other_slot);
     dev.reboot_system();
 }
 
@@ -134,10 +133,10 @@ fn flash_trim_areas(dev: &mut FastbootDevice, tas: Vec<TrimArea>) {
     }
 }
 
-fn flash_boot(dev: &mut FastbootDevice, boot: BootConfiguration, boot_ta: TrimArea, slot: Slot) {
+fn flash_boot(dev: &mut FastbootDevice, boot: BootConfiguration, slot: Slot) {
     println!("{:─<97}", "Processing boot delivery ");
 
-    boot_ta.flash(dev).unwrap();
+    boot.boot_config.flash(dev).unwrap();
 
     // seems to be just one file
     for sin in &boot.boot_images {
