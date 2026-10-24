@@ -27,19 +27,18 @@ impl Response {
 
 #[derive(PartialEq, Eq, Debug, derive_more::Display)]
 pub enum Header {
-    Error = 0,
+    Fail,
     Okay,
     Data,
-    Fail,
     NoHeader,
 }
 
 impl From<&[u8]> for Header {
     fn from(value: &[u8]) -> Self {
         match value {
+            b"FAIL" => Header::Fail,
             b"OKAY" => Header::Okay,
             b"DATA" => Header::Data,
-            b"FAIL" => Header::Fail,
             _ => Header::NoHeader,
         }
     }
