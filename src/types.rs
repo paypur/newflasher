@@ -76,11 +76,11 @@ impl ByteVec {
 
     pub fn to_hexadecimal_string(&self) -> String {
         const NIBBLE_TO_HEX: fn(u8) -> char = |b: u8| -> char {
-            let i = b.min(0x10);
-            (if i < 10 {
-                '0' as u8 + i
+            debug_assert!(b < 0x10);
+            (if b < 10 {
+                '0' as u8 + b
             } else {
-                'A' as u8 + i - 10
+                'A' as u8 + b - 10
             }) as char
         };
 
