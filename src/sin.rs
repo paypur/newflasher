@@ -21,17 +21,23 @@ impl Sin {
     pub fn open(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let path = path.as_ref();
 
-        let prefix = Self::validate_prefix(path)?;
+        let mut prefix = None;
+        let other = path.to_string_lossy().contains("_other");
         let mut cms = Vec::<u8>::new();
         let mut chunks = Vec::<Vec<u8>>::new();
 
-        for (i, mut entry) in open_sin_archive(path)?
+        for (i, entry) in open_sin_archive(path)?
             .entries()?
-            .map(|e| e.unwrap())
-            .filter(filter_entry)
             .enumerate() {
+            let mut entry = entry.with_context(|| format!("Failed to read tar entry from {}", path.display()))?;
+
+            if !filter_entry(&entry) {
+                continue;
+            }
+
             match i {
                 0 => {
+                    let _ = prefix.insert(Self::entry_prefix(&entry)?);
                     cms.reserve_exact(entry.size() as usize);
                     entry.read_to_end(cms.as_mut())?;
                 },
@@ -43,7 +49,8 @@ impl Sin {
             }
         }
 
-        Ok(Self { prefix, other: path.to_str().unwrap().contains("_other"), cms, chunks })
+
+        Ok(Self { prefix: prefix.ok_or_else(|| anyhow!("Failed to get prefix from {}", path.display()))?, other, cms, chunks })
     }
 
     pub fn flash(&self, usb: &mut FastbootDevice, target_slot: Slot) -> anyhow::Result<()> {
@@ -151,29 +158,11 @@ impl Sin {
         Ok(())
     }
 
-    fn validate_prefix(path: &Path) -> anyhow::Result<String> {
-        let mut archive = open_sin_archive(&path)?;
-
-        let mut prefix_iter = archive.entries()?
-            .map(|e| e.unwrap())
-            .filter(filter_entry)
-            .map(|entry| {
-                // ensure!(entry.size() != 0, "Tar entry contained 0 bytes!");
-                let name = tar_entry_header_name(&entry).ok()?;
-                Some(Path::new(name).with_extension(""))
-            })
-            .into_iter();
-
-        let flash_prefix = match prefix_iter.next().flatten() {
-            Some(prefix) => prefix,
-            None => return Err(anyhow!("Empty tar entry name!"))
-        };
-
-        if !prefix_iter.all(|opt| opt.map(|s| s == flash_prefix).unwrap_or(false)) {
-            return Err(anyhow!("Mismatched tar entry name!"));
-        }
-
-        Ok(flash_prefix.to_str().ok_or_else(|| anyhow!("Invalid UTF-8 in sin archive entry prefix!"))?.to_string())
+    /// Returns tar entry name without the extension
+    fn entry_prefix(entry: &Entry<Box<dyn Read>>) -> anyhow::Result<String> {
+        let path = Path::new(tar_entry_header_name(&entry)?).with_extension("");
+        let str = path.to_str().context("Failed convert path back into string")?;
+        Ok(str.to_owned())
     }
 }
 
