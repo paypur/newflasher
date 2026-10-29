@@ -1,7 +1,7 @@
 use crate::fastboot::{FastbootDevice, Header};
 use crate::types::{ByteVec, ProgressBar, Slot};
 use crate::utils::*;
-use anyhow::{Context, anyhow, ensure};
+use anyhow::{anyhow, ensure, Context};
 use flate2::read::GzDecoder;
 use log::{debug, error, info};
 use std::fs;
@@ -95,12 +95,10 @@ impl Sin {
         let parts = 1 + self.chunks.len() as u64;
         let mut progress = ProgressBar::new(parts, format!("Flashing {prefix} ({target_slot})"));
 
-        self.download_cms(usb)?;
-        progress.inc();
+        progress.step(|| self.download_cms(usb))?;
 
         for (i, chunk) in self.chunks.iter().enumerate() {
-            info!("Downloading sparse chunk {prefix}");
-
+            info!("Downloading sparse chunk {prefix}.{i}");
             usb.download(chunk).with_context(|| format!("Failed to transfer {prefix}, chunk {i} of {parts}"))?;
 
             if is_partition_image {
@@ -127,9 +125,7 @@ impl Sin {
             progress.inc();
         }
 
-        progress.okay();
-
-        Ok(())
+        Ok(progress.okay())
     }
 
     /// Attempts to write cms to device
@@ -167,13 +163,13 @@ impl Sin {
 }
 
 pub fn parse_all_cwd() -> anyhow::Result<Vec<Sin>> {
-    let sins = parse_all(fs::read_dir("./")?.filter_map(is_sin_file).collect())?;
+    let sins = parse_all(fs::read_dir("./")?.filter_map(is_sin_file))?;
     info!("Found {} .sin files", sins.len());
     Ok(sins)
 }
 
-pub fn parse_all(paths: Vec<PathBuf>) -> anyhow::Result<Vec<Sin>> {
-    paths.iter()
+pub fn parse_all(paths: impl IntoIterator<Item = PathBuf>) -> anyhow::Result<Vec<Sin>> {
+    paths.into_iter()
         .filter(|p| {
             if noerase_in_updatexml(p.file_name().unwrap()) || p.file_name().unwrap().to_string_lossy().contains("persist") {
                 info!("Skipping {}", p.display());

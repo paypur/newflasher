@@ -111,7 +111,7 @@ impl TrimArea {
     }
 }
 
-pub fn parse_all() -> anyhow::Result<Vec<TrimArea>> {
+pub fn parse_all_cwd() -> anyhow::Result<Vec<TrimArea>> {
     let tas = fs::read_dir("./").unwrap()
         .filter_map(is_ta_file)
         .filter(|path| !noerase_in_updatexml(path.file_name().unwrap()))

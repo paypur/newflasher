@@ -61,17 +61,18 @@ pub struct FastbootDevice {
 }
 
 impl FastbootDevice {
-    pub fn open() -> Self {
+    pub fn open() -> anyhow::Result<Self> {
         let info = nusb::list_devices()
-            .wait()
-            .unwrap()
+            .wait()?
             .find(|d| d.vendor_id() == VID && d.product_id() == PID)
-            .expect("Failed to find device! Device should be connected via flash mode (green *)");
+            .context("Failed to find device! Device should be connected via flash mode (green *), not fastboot!")?;
 
         info!("USB device connected at {:?} speed", info.speed());
+        let _device: Device = info.open().wait().with_context(|| format!("Failed to open device (VID: {VID}, PID: {PID})"))?;
+        let _interface: Interface = _device.claim_interface(0).wait()?;
 
-        let _device: Device = info.open().wait().unwrap_or_else(|e| panic!("Failed to open device (VID: {VID}, PID: {PID})\n{e}"));
-        let _interface: Interface = _device.claim_interface(0).wait().unwrap();
+        let reader = _interface.endpoint::<Bulk, In>(IN)?.reader(256).with_num_transfers(1).with_read_timeout(TEN_SEC);
+        let writer = _interface.endpoint::<Bulk, Out>(OUT)?.writer(0x20000).with_num_transfers(4).with_write_timeout(TEN_SEC);
 
         let reader = _interface.endpoint::<Bulk, In>(IN).unwrap().reader(256).with_num_transfers(1).with_read_timeout(TEN_SEC);
         let writer = _interface.endpoint::<Bulk, Out>(OUT).unwrap().writer(0x20000).with_num_transfers(4).with_write_timeout(TEN_SEC);
@@ -96,31 +97,31 @@ impl FastbootDevice {
         Ok(())
     }
 
-    pub fn reboot_system(&mut self) {
-        self.command_expect_header("continue", Header::Okay).expect("Failed to reboot to system!");
-        println!("Rebooting to system");
+    pub fn reboot_system(&mut self) -> anyhow::Result<()>  {
+        self.command_expect_header("continue", Header::Okay).context("Failed to reboot to system!")?;
+        Ok(println!("Rebooting to system"))
     }
 
-    pub fn enter_flash_mode(&mut self) {
-        self.download(&[1u8]).unwrap();
-        self.command_expect_header("Write-TA:2:10100", Header::Okay).expect("Failed to enter flash mode");
-        info!("Entered flash mode");
+    pub fn enter_flash_mode(&mut self) -> anyhow::Result<()>  {
+        self.download(&[1u8])?;
+        self.command_expect_header("Write-TA:2:10100", Header::Okay).context("Failed to enter flash mode")?;
+        Ok(info!("Entered flash mode"))
     }
 
-    pub fn exit_flash_mode(&mut self) {
-        self.download(&[0u8]).unwrap();
-        self.command_expect_header("Write-TA:2:10100", Header::Okay).expect("Failed to exit flash mode");
-        info!("Exited flash mode");
+    pub fn exit_flash_mode(&mut self) -> anyhow::Result<()> {
+        self.download(&[0u8])?;
+        self.command_expect_header("Write-TA:2:10100", Header::Okay).context("Failed to exit flash mode")?;
+        Ok(info!("Exited flash mode"))
     }
 
-    pub fn sync(&mut self) {
-        self.command_expect_header("Sync", Header::Okay).unwrap();
+    pub fn sync(&mut self) -> anyhow::Result<()> {
+        self.command_expect_header("Sync", Header::Okay)?;
+        Ok(())
     }
 
-    pub fn set_active_slot(&mut self, slot: Slot) {
-        let cmd = format!("set_active:{slot}");
-        self.command_expect_header(cmd, Header::Okay).expect("Failed to set active slot");
-        println!("Set active slot to {slot}");
+    pub fn set_active_slot(&mut self, slot: Slot) -> anyhow::Result<()> {
+        self.command_expect_header(format!("set_active:{slot}"), Header::Okay).context("Failed to set active slot")?;
+        Ok(println!("Set active slot to {slot}"))
     }
 
     /// For commands that require multiple reads to receive the actual data
