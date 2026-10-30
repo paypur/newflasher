@@ -105,10 +105,12 @@ fn main() -> anyhow::Result<()> {
     /* begin flashing */
     match (|| -> anyhow::Result<()> {
         dev.enter_flash_mode()?;
+        // partition just has to be first on 1VI, otherwise cause a bootloop
+        flash_partitions(&mut dev, partition, other_slot)?;
         flash_sins(&mut dev, sins, other_slot)?;
         flash_trim_areas(&mut dev, tas)?;
         flash_boot(&mut dev, boot, other_slot)?;
-        flash_partitions(&mut dev, partition, other_slot)
+        Ok(())
     })() {
         Ok(_) => {
             dev.exit_flash_mode()?;
