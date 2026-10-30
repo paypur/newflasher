@@ -167,9 +167,11 @@ pub fn boot_delivery(root_key_hash: Option<&str>) -> anyhow::Result<BootConfigur
     Err(anyhow!("No commercial boot configuration found!"))
 }
 
-pub fn partition_delivery() -> anyhow::Result<Vec<Sin>> {
+pub fn partition_delivery(lun_size: Option<u64>) -> anyhow::Result<Vec<Sin>> {
     let partition_delivery_file = File::open("partition/partition_delivery.xml").context("Failed to open partition_delivery.xml")?;
     let reader = ParserConfig::default().create_reader(BufReader::new(partition_delivery_file));
+
+    let regex = Regex::new(r"partition-image-LUN0_(\d{8,10})_X-FLASH-ALL-[0-9A-F]{4}")?;
 
     let mut element_stack = Vec::<String>::new();
     let mut partition_paths = Vec::<PathBuf>::new();
@@ -186,7 +188,21 @@ pub fn partition_delivery() -> anyhow::Result<Vec<Sin>> {
 
                 if in_partition_images && is_file {
                     if let Some(path) = attribute_value(&attributes, PATH_ATTRIBUTE) {
-                        partition_paths.push(Path::new("partition/").join(path));
+                        let skip = if let Some(lun_size) = lun_size {
+                            regex.captures(&path)
+                                .and_then(|cap| cap.get(1))
+                                .map(|match_| match_.as_str().parse::<u64>())
+                                .transpose()?
+                                .is_some_and(|u| lun_size != u)
+                        } else {
+                            false
+                        };
+
+                        if skip {
+                            info!("Skipping {path}");
+                        } else {
+                            partition_paths.push(Path::new("partition/").join(&path));
+                        }
                     }
                 }
 

@@ -4,9 +4,10 @@ use crate::ta::TrimArea;
 use crate::types::{ProgressBar, Slot};
 use crate::xml::BootConfiguration;
 use anyhow::{Context, bail, ensure};
-use log::warn;
+use log::{debug, info, warn};
 use nusb::Speed;
 use std::io::{Read, stdin};
+use crate::utils::{formatted_hex, lun_size_kb};
 
 pub mod tests;
 pub mod types;
@@ -60,6 +61,15 @@ fn main() -> anyhow::Result<()> {
     let _security_state = dev.getvar_string("Security-state").unwrap();
     let _s1_root = dev.getvar_string("S1-root").unwrap();
     let _sake_root = dev.getvar_string("Sake-root").unwrap();
+
+    ensure!(ufs_info.is_some(), "Ufs-info is not available. Should check emmc instead but currently not supported");
+
+    let ufs_info = dev.get_data("Get-ufs-info")?;
+    debug!("{}", formatted_hex("UFS", ufs_info.as_ref()));
+
+    let lun_size = lun_size_kb(ufs_info.as_ref())?;
+    info!("LUN size: {lun_size} KiB");
+
     let root_key_hash = dev.get_data("Get-root-key-hash")?.to_hexadecimal_string();
 
     let _slot_count = dev.getvar_u32("slot-count")?;
@@ -80,7 +90,7 @@ fn main() -> anyhow::Result<()> {
     let sins = bar.step(|| sin::parse_all_cwd())?;
     let tas = bar.step(|| ta::parse_all_cwd())?;
     let boot = bar.step(|| xml::boot_delivery(Some(&root_key_hash)))?;
-    let partition = bar.step(|| xml::partition_delivery())?;
+    let partition = bar.step(|| xml::partition_delivery(Some(lun_size)))?;
     bar.okay();
 
     println!("Active Slot: {current_slot}");

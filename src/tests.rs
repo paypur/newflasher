@@ -38,26 +38,42 @@ mod tests {
         std::env::set_current_dir(cwd).unwrap();
     }
 
-    fn parse_files() {
-        let _tas = ta::parse_all().unwrap();
-        let _partition = xml::partition_delivery().unwrap();
+    fn parse_files(lun_size: Option<u64>) {
+        let _tas = ta::parse_all_cwd().unwrap();
         let _sins = sin::parse_all_cwd().unwrap();
         let _boot = xml::boot_delivery(None).unwrap();
+        let _partition = xml::partition_delivery(lun_size).unwrap();
     }
 
     #[test]
-    fn parse_files_xqec72() {
-        env_logger::builder().format_timestamp(None).init();
-
-        env::set_current_dir("/media/secondary/xperia/XQ-EC72_Customized_HK_69.2.A.4.110").unwrap();
-        parse_files();
-    }
-
-    #[test]
-    fn parse_files_xqge44() {
-        env_logger::builder().format_timestamp(None).init();
+    fn parse_files_xqge44() { // 1 VIII
         env::set_current_dir("/media/secondary/xperia/XQ-GE44_Customized_JP_73.0.A.2.62").unwrap();
-        parse_files();
+        parse_files(None);
+    }
+
+    #[test]
+    fn parse_files_xqgh44() { // 1 VIII
+        env::set_current_dir("/media/server/hjc/XQ-GH44_Customized_JP_74.1.A.2.42").unwrap();
+        parse_files(None);
+    }
+
+    #[test]
+    fn parse_files_xqec72() { // 1 VI
+        env_logger::init();
+        env::set_current_dir("/media/secondary/xperia/XQ-EC72_Customized_HK_69.2.A.4.110").unwrap();
+        parse_files(Some(249896960));
+    }
+
+    #[test]
+    fn parse_files_xqcq72() { // 5 IV
+        env::set_current_dir("/media/secondary/xperia/XQ-CQ72_Customized_HK_64.2.A.2.272").unwrap();
+        parse_files(None);
+    }
+
+    #[test]
+    fn parse_files_j8170() { // 1
+        env::set_current_dir("/media/secondary/xperia/J8170_Customized_US_55.2.E.0.165-R7C").unwrap();
+        parse_files(None);
     }
 
     #[test]
