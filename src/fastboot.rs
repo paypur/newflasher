@@ -205,7 +205,6 @@ impl FastbootDevice {
 
         if let Err(e) = self.writer.flush() {
             match e.kind() {
-                ErrorKind::ConnectionAborted => panic!("{}", e),
                 // can be caused by writing commands consecutively without reading in between
                 ErrorKind::TimedOut => {
                     eprintln!("Flush timed out.");
