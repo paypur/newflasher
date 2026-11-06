@@ -4,7 +4,7 @@ use anyhow::{Context, ensure};
 use log::{debug, info};
 use nusb::io::{EndpointRead, EndpointWrite};
 use nusb::transfer::{Bulk, In, Out};
-use nusb::{Device, Interface, MaybeFuture};
+use nusb::{Device, Interface, MaybeFuture, Speed};
 use std::io::{ErrorKind, Read, Write};
 use std::time::Duration;
 
@@ -54,7 +54,7 @@ const OUT: u8 = 0x01;
 const TEN_SEC: Duration = Duration::from_secs(10);
 
 pub struct FastbootDevice {
-    _device: Device,
+    device: Device,
     _interface: Interface,
     pub reader: EndpointRead<Bulk>,
     pub writer: EndpointWrite<Bulk>
@@ -68,13 +68,17 @@ impl FastbootDevice {
             .context("Failed to find device! Device should be connected via flash mode (green *), not fastboot!")?;
 
         info!("USB device connected at {:?} speed", info.speed());
-        let _device: Device = info.open().wait().with_context(|| format!("Failed to open device (VID: {VID}, PID: {PID})"))?;
-        let _interface: Interface = _device.claim_interface(0).wait()?;
+        let device: Device = info.open().wait().with_context(|| format!("Failed to open device (VID: {VID}, PID: {PID})"))?;
+        let _interface: Interface = device.claim_interface(0).wait()?;
 
         let reader = _interface.endpoint::<Bulk, In>(IN)?.reader(256).with_num_transfers(1).with_read_timeout(TEN_SEC);
         let writer = _interface.endpoint::<Bulk, Out>(OUT)?.writer(0x20000).with_num_transfers(4).with_write_timeout(TEN_SEC);
 
         Ok(Self { device, _interface, reader, writer })
+    }
+
+    pub fn speed(&self) -> Option<Speed> {
+        self.device.speed()
     }
 
     /* utility commands */

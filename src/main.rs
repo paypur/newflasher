@@ -93,6 +93,8 @@ fn main() -> anyhow::Result<()> {
     let partition = bar.step(|| xml::partition_delivery(Some(lun_size)))?;
     bar.okay();
 
+    check_usb_speed(&dev);
+
     println!("Ready to flash device, press ENTER to continue ...");
 
     loop {
@@ -129,6 +131,21 @@ fn main() -> anyhow::Result<()> {
             dev.sync()?;
             bail!("{}", e)
         }
+    }
+}
+
+fn check_usb_speed(dev: &FastbootDevice) {
+    if let Some(speed) = dev.speed() && speed < Speed::Super {
+        let data_rate = match speed {
+            Speed::Low => "1.5 Mbps",
+            Speed::Full => "12 Mbps",
+            Speed::High => "480 Mbps",
+            Speed::Super => "5 Gbps",
+            Speed::SuperPlus => "10 Gbps",
+            _ => "unknown"
+        };
+        // seems like all phones (that we support) are at least USB 3.0
+        warn!("Device is connected at {data_rate}, which is slower than the device supports. Consider switching to at least a USB 3.0 connection to improve flashing speeds.");
     }
 }
 
