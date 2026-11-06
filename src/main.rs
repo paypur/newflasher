@@ -44,25 +44,25 @@ fn main() -> anyhow::Result<()> {
         bail!("Specified directory is probably not for this device!");
     }
 
-    let _version = dev.getvar_string("version").unwrap();
-    let _version_bootloader = dev.getvar_string("version-bootloader").unwrap();
-    let _serial_number = dev.getvar_string("serialno").unwrap();
-    let _is_secure = dev.getvar_string("secure").unwrap() == "yes";
-    let _sector_size = dev.getvar_u32("Sector-size").unwrap();
-    let _loader_version = dev.getvar_string("Loader-version").unwrap();
-    let _phone_id = dev.getvar_string("Phone-id").unwrap();
-    let _device_id = dev.getvar_string("Device-id").unwrap();
-    let _platform_id = dev.getvar_string("Platform-id").unwrap();
-    let _rooting_status = dev.getvar_string("Rooting-status").unwrap();
-    let _ufs_info = dev.getvar_string("Ufs-info").unwrap();
-    let _emmc_info = dev.getvar_string("Emmc-info");
-    let _default_security = dev.getvar_string("Default-security").unwrap() == "ON";
-    let _keystore_counter = dev.getvar_string("Keystore-counter").unwrap();
-    let _security_state = dev.getvar_string("Security-state").unwrap();
-    let _s1_root = dev.getvar_string("S1-root").unwrap();
-    let _sake_root = dev.getvar_string("Sake-root").unwrap();
+    // let _version = dev.getvar_string("version")?;
+    // let _version_bootloader = dev.getvar_string("version-bootloader")?;
+    // let _serial_number = dev.getvar_string("serialno")?;
+    // let _is_secure = dev.getvar_string("secure")? == "yes";
+    // let sector_size = dev.getvar_u32("Sector-size")?;
+    // let _loader_version = dev.getvar_string("Loader-version")?;
+    // let _phone_id = dev.getvar_string("Phone-id")?;
+    // let _device_id = dev.getvar_string("Device-id")?;
+    // let _platform_id = dev.getvar_string("Platform-id")?;
+    // let _rooting_status = dev.getvar_string("Rooting-status")?;
+    let ufs_info = dev.getvar_string("Ufs-info").inspect_err(|e| warn!("{e}")).ok();
+    // let _emmc_info = dev.getvar_string("Emmc-info");
+    // let _default_security = dev.getvar_string("Default-security")? == "ON";
+    // let _keystore_counter = dev.getvar_string("Keystore-counter")?;
+    // let _security_state = dev.getvar_string("Security-state")?;
+    // let _s1_root = dev.getvar_string("S1-root")?;
+    // let _sake_root = dev.getvar_string("Sake-root")?;
 
-    ensure!(ufs_info.is_some(), "Ufs-info is not available. Should check emmc instead but currently not supported");
+    ensure!(ufs_info.is_some(), "Ufs-info is not available. Should check emmc instead but currently not implemented");
 
     let ufs_info = dev.get_data("Get-ufs-info")?;
     debug!("{}", formatted_hex("UFS", ufs_info.as_ref()));
@@ -93,8 +93,7 @@ fn main() -> anyhow::Result<()> {
     let partition = bar.step(|| xml::partition_delivery(Some(lun_size)))?;
     bar.okay();
 
-    println!("Active Slot: {current_slot}");
-    println!("Ready to flash device, press any key to continue ...");
+    println!("Ready to flash device, press ENTER to continue ...");
 
     loop {
         if let Ok(_) = stdin().read(&mut [0u8]) {
