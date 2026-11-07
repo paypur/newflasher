@@ -74,10 +74,7 @@ impl FastbootDevice {
         let reader = _interface.endpoint::<Bulk, In>(IN)?.reader(256).with_num_transfers(1).with_read_timeout(TEN_SEC);
         let writer = _interface.endpoint::<Bulk, Out>(OUT)?.writer(0x20000).with_num_transfers(4).with_write_timeout(TEN_SEC);
 
-        let reader = _interface.endpoint::<Bulk, In>(IN).unwrap().reader(256).with_num_transfers(1).with_read_timeout(TEN_SEC);
-        let writer = _interface.endpoint::<Bulk, Out>(OUT).unwrap().writer(0x20000).with_num_transfers(4).with_write_timeout(TEN_SEC);
-
-        Self { _device, _interface, reader, writer }
+        Ok(Self { device, _interface, reader, writer })
     }
 
     /* utility commands */

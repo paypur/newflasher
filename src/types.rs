@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use derive_more::{AsRef, Deref, DerefMut};
 use indicatif::{ProgressFinish, ProgressStyle};
 use std::borrow::Cow;
