@@ -130,24 +130,29 @@ impl Sin {
 
     /// Attempts to write cms to device
     fn download_cms(&self, dev: &mut FastbootDevice) -> anyhow::Result<()> {
-        // let entry_name = tar_entry_header_name(entry)?;
         info!("Downloading signature {}", self.prefix);
 
         let hex_len = ByteVec::from_len(self.cms.len() as u32);
 
-        let mut res = dev.command(format!("signature:{hex_len}"))?;
+        let mut res = dev.command(match dev.is_2021_or_newer {
+            true => format!("download:{hex_len}"), // seems to work on older devices anyways
+            false => format!("signature:{hex_len}")
+        })?;
 
-        let is_2021_device: bool = res.header == Header::Fail;
-        if is_2021_device {
-            info!("device from 2021 and up?");
-            res = dev.command(format!("download:{hex_len}"))?;
+        match res.header {
+            Header::Okay | Header::Data => (),
+            Header::Fail if dev.is_2021_or_newer => {
+                dev.is_2021_or_newer = false;
+                res = dev.command(format!("signature:{hex_len}"))?;
+            },
+            h => anyhow::bail!("Unexpected command response: {h}: {}", res.data)
         }
 
         ensure!(hex_len == res.data, "Invalid DATA reply string, Expected {hex_len}, received {}", res.data);
 
         let _ = dev.write_and_expect_header(&self.cms, Header::Okay).context("Failed to write cms! cms is possibly corrupt.")?;
 
-        if is_2021_device {
+        if dev.is_2021_or_newer {
             let _ = dev.write_and_expect_header("signature", Header::Okay)?;
         }
 

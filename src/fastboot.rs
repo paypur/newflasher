@@ -57,7 +57,8 @@ pub struct FastbootDevice {
     device: Device,
     _interface: Interface,
     pub reader: EndpointRead<Bulk>,
-    pub writer: EndpointWrite<Bulk>
+    pub writer: EndpointWrite<Bulk>,
+    pub is_2021_or_newer: bool
 }
 
 impl FastbootDevice {
@@ -74,7 +75,7 @@ impl FastbootDevice {
         let reader = _interface.endpoint::<Bulk, In>(IN)?.reader(256).with_num_transfers(1).with_read_timeout(TEN_SEC);
         let writer = _interface.endpoint::<Bulk, Out>(OUT)?.writer(0x20000).with_num_transfers(4).with_write_timeout(TEN_SEC);
 
-        Ok(Self { device, _interface, reader, writer })
+        Ok(Self { device, _interface, reader, writer, is_2021_or_newer: true })
     }
 
     pub fn speed(&self) -> Option<Speed> {
