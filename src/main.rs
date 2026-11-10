@@ -4,10 +4,10 @@ use crate::ta::TrimArea;
 use crate::types::{ProgressBar, Slot};
 use crate::xml::BootConfiguration;
 use anyhow::{Context, bail, ensure};
-use log::{debug, info, warn};
+use log::{warn};
 use nusb::Speed;
 use std::io::{Read, stdin};
-use crate::utils::{formatted_hex, lun_size_kb};
+use crate::utils::{lun_size_kb};
 
 pub mod tests;
 pub mod types;
@@ -65,10 +65,8 @@ fn main() -> anyhow::Result<()> {
     ensure!(ufs_info.is_some(), "Ufs-info is not available. Should check emmc instead but currently not implemented");
 
     let ufs_info = dev.get_data("Get-ufs-info")?;
-    debug!("{}", formatted_hex("UFS", ufs_info.as_ref()));
 
     let lun_size = lun_size_kb(ufs_info.as_ref())?;
-    info!("LUN size: {lun_size} KiB");
 
     let root_key_hash = dev.get_data("Get-root-key-hash")?.to_hexadecimal_string();
 

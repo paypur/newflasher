@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use log::{Level, error, log_enabled, trace};
+use log::{debug, error, log_enabled, trace, Level, info};
 use std::ffi::OsStr;
 use std::fmt::Write;
 use std::fs::{DirEntry, File};
@@ -90,9 +90,15 @@ pub fn tar_entry_header_name<'a>(entry: &'a Entry<Box<dyn Read>>) -> anyhow::Res
 
 /// https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ufs/
 pub fn lun_size_kb(ufs_info: &[u8]) -> anyhow::Result<u64> {
+    debug!("{}", formatted_hex("UFS", ufs_info));
+
     let device_descriptor_length = ufs_info[0];
     let unit_descriptor = &ufs_info[(device_descriptor_length as usize)..];
     let logical_block_size = unit_descriptor[0x0A];
     let phy_mem_resource_count = u64::from_be_bytes(unit_descriptor[0x18..=0x1F].try_into()?);
-    Ok(phy_mem_resource_count * 2u64.pow(logical_block_size as u32) / 1024)
+
+    let lun_size = phy_mem_resource_count * 2u64.pow(logical_block_size as u32) / 1024;
+    info!("LUN size: {lun_size} KiB");
+
+    Ok(lun_size)
 }
