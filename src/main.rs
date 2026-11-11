@@ -96,13 +96,7 @@ fn main() -> anyhow::Result<()> {
     let partition = bar.step(|| xml::partition_delivery(Some(lun_size)))?;
     bar.okay();
 
-    println!("Ready to flash device, press ENTER to continue ...");
-
-    loop {
-        if let Ok(_) = stdin().read(&mut [0u8]) {
-            break;
-        }
-    }
+    pause();
 
     /* begin flashing */
     match (|| -> anyhow::Result<()> {
@@ -131,6 +125,16 @@ fn main() -> anyhow::Result<()> {
             dev.exit_flash_mode()?;
             dev.sync()?;
             bail!("{}", e)
+        }
+    }
+}
+
+fn pause() {
+    println!("Ready to flash device, press ENTER to continue ...");
+
+    loop {
+        if let Ok(_) = stdin().read(&mut [0u8]) {
+            break;
         }
     }
 }
