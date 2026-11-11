@@ -20,7 +20,7 @@ pub struct TrimArea {
 }
 
 impl TrimArea {
-    pub fn new(name: &str, partition: u8, units: Vec<BootConfigUnit>) -> Self {
+    fn new(name: &str, partition: u8, units: Vec<BootConfigUnit>) -> Self {
         Self {
             name: name.to_owned(),
             partition,
@@ -28,7 +28,7 @@ impl TrimArea {
         }
     }
 
-    pub fn parse_file(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+    pub fn parse(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let path = path.as_ref();
 
         let path_no_ext = path.with_extension("");
@@ -122,7 +122,7 @@ pub fn parse_all_cwd() -> anyhow::Result<Vec<TrimArea>> {
             info!("Skipping {}", path.display());
             false
         })
-        .map(TrimArea::parse_file)
+        .map(TrimArea::parse)
         .collect::<Result<Vec<_>, _>>()
         .context("All .ta files could not be successfully parsed!")?;
 
@@ -173,7 +173,7 @@ mod tests {
     #[test]
     fn test_ta_files() {
         let compare = |file: &str, partition: u8, units: Vec<BootConfigUnit>| {
-            let result = TrimArea::parse_file(PathBuf::from(file)).expect(file);
+            let result = TrimArea::parse(PathBuf::from(file)).expect(file);
             assert_eq!(result.partition, partition);
             assert_eq!(result.units, units);
         };

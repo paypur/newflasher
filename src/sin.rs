@@ -18,7 +18,7 @@ pub struct Sin {
 }
 
 impl Sin {
-    pub fn open(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+    pub fn parse(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let path = path.as_ref();
 
         let mut prefix = None;
@@ -49,31 +49,10 @@ impl Sin {
             }
         }
 
-
         Ok(Self { prefix: prefix.ok_or_else(|| anyhow!("Failed to get prefix from {}", path.display()))?, other, cms, chunks })
     }
 
     pub fn flash(&self, usb: &mut FastbootDevice, target_slot: Slot) -> anyhow::Result<()> {
-        // let flash_prefix = validate_prefix(sin_path)?;
-
-        // let flash_both_slots = flash_prefix == "bootloader" || flash_prefix == "bluetooth" || flash_prefix == "dsp" || flash_prefix == "modem" || flash_prefix == "rdimage";
-
-        self.process_sins_slot(usb, target_slot, false)?;
-
-        // TODO: flashing both slots is just not safe
-        // if flash_both_slots {
-        //     process_sins_slot(usb, sin_path, flash_prefix.as_str(), target_slot.other(), flash_both_slots)?;
-        // }
-
-        Ok(())
-    }
-
-    fn process_sins_slot(
-        &self,
-        usb: &mut FastbootDevice,
-        target_slot: Slot,
-        flash_both_slots: bool,
-    ) -> anyhow::Result<()> {
         let prefix = self.prefix.as_str();
 
         info!("Processing {}", prefix);
@@ -165,6 +144,10 @@ impl Sin {
         Ok(())
     }
 
+    pub fn chunks(&self) -> impl Iterator<Item = &[u8]> {
+        self.chunks.iter().map(|c| c.as_slice())
+    }
+
     /// Returns tar entry name without the extension
     fn entry_prefix(entry: &Entry<Box<dyn Read>>) -> anyhow::Result<String> {
         let path = Path::new(tar_entry_header_name(&entry)?).with_extension("");
@@ -188,7 +171,7 @@ pub fn parse_all(paths: impl IntoIterator<Item = PathBuf>) -> anyhow::Result<Vec
             }
             true
         })
-        .map(Sin::open)
+        .map(Sin::parse)
         .collect::<anyhow::Result<Vec<Sin>>>()
 }
 
