@@ -98,7 +98,19 @@ impl Sin {
         progress.step(|| {
             self.download_cms(usb)?;
 
-        progress.step(|| self.download_cms(usb))?;
+            // include this in the step since downloading cms is so fast
+            if !is_partition_image {
+                let erase_cmd = match (has_slot, self.other) {
+                    (false, _) => format!("erase:{prefix}"),
+                    (true, false) => format!("erase:{prefix}_{target_slot}"),
+                    (true, true) => format!("erase:{prefix}_{}", target_slot.other()),
+                };
+                usb.command_expect_header(erase_cmd, Header::Okay)
+                   .context("Failed to erase partition before flashing. Possible that command timed out")?;
+            }
+
+            Ok::<(), anyhow::Error>(())
+        })?;
 
         for (i, chunk) in self.chunks.iter().enumerate() {
             info!("Downloading sparse chunk {prefix}.{i}");
@@ -108,15 +120,6 @@ impl Sin {
                 let cmd = prefix.replace("partitionimage_", "Repartition:");
                 usb.command_expect_header(cmd, Header::Okay)?;
             } else {
-                if i == 0 {
-                    let erase_cmd = match (has_slot, self.other) {
-                        (false, _) => format!("erase:{prefix}"),
-                        (true, false) => format!("erase:{prefix}_{target_slot}"),
-                        (true, true) => format!("erase:{prefix}_{}", target_slot.other()),
-                    };
-                    usb.command_expect_header(erase_cmd, Header::Okay)?;
-                }
-
                 let flash_cmd = match (has_slot, self.other) {
                     (false, _) => format!("flash:{prefix}"),
                     (true, false) => format!("flash:{prefix}_{target_slot}"),
