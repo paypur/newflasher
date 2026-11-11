@@ -93,7 +93,10 @@ impl Sin {
         };
 
         let parts = 1 + self.chunks.len() as u64;
-        let mut progress = ProgressBar::new(parts, format!("Flashing {prefix} ({target_slot})"));
+        let mut progress = ProgressBar::new(parts, format!("{prefix} ({target_slot})"));
+
+        progress.step(|| {
+            self.download_cms(usb)?;
 
         progress.step(|| self.download_cms(usb))?;
 

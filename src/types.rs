@@ -1,8 +1,9 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use derive_more::{AsRef, Deref, DerefMut};
 use indicatif::{ProgressFinish, ProgressStyle};
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
+use std::time::Duration;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Slot {
@@ -161,25 +162,37 @@ pub struct ProgressBar {
 
 impl ProgressBar {
     pub fn new(parts: u64, text: impl Into<String>) -> Self {
-        let template = format!("{{prefix:<{PREFIX_LEN}}} {{elapsed:>3}} [{{bar:40.cyan/blue}}] {{percent:>3}}% {{msg}}");
+        // spinner is just a space after finishing
+        let template = format!(" {{spinner}} {{prefix:<{PREFIX_LEN}}} {{elapsed:>3.yellow}} [{{bar:30.cyan/blue}}] {{percent:>2}}%");
 
         let mut prefix = text.into();
         prefix.truncate(PREFIX_LEN);
 
-        Self { bar: indicatif::ProgressBar::new(parts)
-            .with_position(0)
+        let bar = indicatif::ProgressBar::new(parts)
             .with_style(ProgressStyle::with_template(template.as_str()).unwrap().progress_chars("#*-"))
             .with_prefix(prefix)
-            .with_finish(ProgressFinish::AbandonWithMessage(Cow::Owned(console::style("FAIL").red().to_string())))
-        }
+            .with_finish(ProgressFinish::AbandonWithMessage(Cow::Owned(console::style("✗").red().bright().to_string())));
+
+        bar.enable_steady_tick(Duration::from_millis(100));
+
+        Self { bar }
     }
 
     pub fn inc(&mut self) {
         self.bar.inc(1)
     }
 
-    pub fn set_position(&self, pos: u64) {
-        self.bar.set_position(pos);
+    pub fn okay(&mut self) {
+        self.set_finished_style();
+        self.bar.finish_with_message(console::style("✔").green().bright().to_string());
+    }
+
+    pub fn fail(self) {
+        self.bar.abandon();
+    }
+
+    pub fn set_prefix(&mut self, prefix: impl Into<String>) {
+        self.bar.set_prefix(prefix.into());
     }
 
     pub fn step<T, E>(&mut self, f: impl FnOnce() -> Result<T, E>) -> Result<T, E> {
@@ -187,12 +200,16 @@ impl ProgressBar {
         self.inc();
         Ok(value)
     }
-    
-    pub fn okay(self) {
-        self.bar.finish_with_message(console::style("OKAY").green().to_string())
-    }
 
-    pub fn fail(self) {
-        self.bar.abandon();
+    fn set_finished_style(&mut self) {
+        self.bar.set_style(self.bar.style().template(" {msg} {prefix:<40} {elapsed:>3.yellow}").unwrap());
+    }
+}
+
+impl Drop for ProgressBar {
+    fn drop(&mut self) {
+        if !self.bar.is_finished() {
+            self.set_finished_style();
+        }
     }
 }

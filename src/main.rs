@@ -115,11 +115,11 @@ fn main() -> anyhow::Result<()> {
             dev.exit_flash_mode()?;
             dev.sync()?;
 
-            println!("Flashing complete");
+            println!("\n\nFlashing complete");
 
             dev.set_active_slot(other_slot)?;
-            dev.print_firmware_history()?;
-            dev.reboot_system()
+            // dev.print_firmware_history()?;
+            dev.reboot_system().context("It is safe to restart the device manually")
         },
         Err(e) if is_connection_aborted(&e) => {
             bail!("{}", e.context("Device disconnected! Check the USB connection and try again"))
@@ -148,7 +148,7 @@ fn check_usb_speed(dev: &FastbootDevice) {
 }
 
 fn flash_sins(dev: &mut FastbootDevice, sins: Vec<Sin>, slot: Slot) -> anyhow::Result<()> {
-    println!("{:─<97}", "Processing .sin files ");
+    println!("{}", console::style("Flashing *.sin").bold().italic().magenta());
 
     // can flash some sin files and still boot
     for sin in sins {
@@ -159,7 +159,7 @@ fn flash_sins(dev: &mut FastbootDevice, sins: Vec<Sin>, slot: Slot) -> anyhow::R
 }
 
 fn flash_trim_areas(dev: &mut FastbootDevice, tas: Vec<TrimArea>) -> anyhow::Result<()> {
-    println!("{:─<97}", "Processing .ta files ");
+    println!("{}", console::style("Flashing *.ta").bold().italic().magenta());
 
     // can flash only one ta at a time and still boot
     for ta in tas {
@@ -170,7 +170,7 @@ fn flash_trim_areas(dev: &mut FastbootDevice, tas: Vec<TrimArea>) -> anyhow::Res
 }
 
 fn flash_boot(dev: &mut FastbootDevice, boot: BootConfiguration, slot: Slot) -> anyhow::Result<()> {
-    println!("{:─<97}", "Processing boot delivery ");
+    println!("{}", console::style("Flashing ./boot/").bold().italic().magenta());
 
     boot.boot_config.flash(dev)?;
 
@@ -183,7 +183,7 @@ fn flash_boot(dev: &mut FastbootDevice, boot: BootConfiguration, slot: Slot) -> 
 }
 
 fn flash_partitions(dev: &mut FastbootDevice, partition: Vec<Sin>, slot: Slot) -> anyhow::Result<()> {
-    println!("{:─<97}", "Processing ./partition files ");
+    println!("{}", console::style("Flashing ./partition/").bold().italic().magenta());
 
     // failing here causes "your device is corrupted and cannot be trusted" error to appear on boot
     for sin in partition {

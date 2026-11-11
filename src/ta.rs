@@ -31,10 +31,12 @@ impl TrimArea {
     pub fn parse_file(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let path = path.as_ref();
 
-        let name = path
+        let path_no_ext = path.with_extension("");
+
+        let name = path_no_ext
             .file_name()
             .and_then(|n| n.to_str())
-            .context("Invalid file name")?;
+            .context("Invalid .ta file name")?;
 
         debug!("Parsing {name}");
 
@@ -98,7 +100,7 @@ impl TrimArea {
     }
 
     pub fn flash(&self, usb: &mut FastbootDevice) -> anyhow::Result<()> {
-        let mut progress = ProgressBar::new(self.units.len() as u64, format!("Flashing {}", self.name));
+        let mut progress = ProgressBar::new(self.units.len() as u64, format!("{}", self.name));
 
         for unit in &self.units {
             usb.download(&unit.data)?;
