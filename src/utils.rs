@@ -5,6 +5,7 @@ use std::fmt::Write;
 use std::fs::{DirEntry, File};
 use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
+use nusb::Speed;
 use tar::Entry;
 
 pub fn trace_formatted_hex(message: &str, buffer: &[u8]) {
@@ -101,4 +102,15 @@ pub fn lun_size_kb(ufs_info: &[u8]) -> anyhow::Result<u64> {
     info!("LUN size: {lun_size} KiB");
 
     Ok(lun_size)
+}
+
+pub fn speed_as_data_rate(speed: Speed) -> &'static str {
+    match speed {
+        Speed::Low => "1.5 Mb/s",
+        Speed::Full => "12 Mb/s",
+        Speed::High => "480 Mb/s",
+        Speed::Super => "5 Gb/s",
+        Speed::SuperPlus => "10 Gb/s",
+        _ => "unknown"
+    }
 }

@@ -7,7 +7,7 @@ use anyhow::{Context, bail, ensure};
 use log::{warn};
 use nusb::Speed;
 use std::io::{Read, stdin};
-use crate::utils::{lun_size_kb};
+use crate::utils::{lun_size_kb, speed_as_data_rate};
 
 pub mod tests;
 pub mod types;
@@ -30,10 +30,12 @@ fn main() -> anyhow::Result<()> {
     std::env::set_current_dir(args[1].as_str())?;
 
     let mut dev = FastbootDevice::open()?;
+    check_usb_speed(&dev);
 
     /* fastboot variables */
     let _max_download_size = dev.getvar_u32("max-download-size")?;
     let product = dev.getvar_string("product")?;
+    println!("↳ product: {}", product);
 
     // basic checks that these files are for the correct device
     if !std::env::current_dir()?
@@ -46,6 +48,9 @@ fn main() -> anyhow::Result<()> {
 
     // let _version = dev.getvar_string("version")?;
     // let _version_bootloader = dev.getvar_string("version-bootloader")?;
+    let version_baseband = dev.getvar_string("version-baseband")?;
+    println!("↳ version-baseband: {}", version_baseband);
+
     // let _serial_number = dev.getvar_string("serialno")?;
     // let _is_secure = dev.getvar_string("secure")? == "yes";
     // let sector_size = dev.getvar_u32("Sector-size")?;
@@ -91,8 +96,6 @@ fn main() -> anyhow::Result<()> {
     let partition = bar.step(|| xml::partition_delivery(Some(lun_size)))?;
     bar.okay();
 
-    check_usb_speed(&dev);
-
     println!("Ready to flash device, press ENTER to continue ...");
 
     loop {
@@ -122,7 +125,7 @@ fn main() -> anyhow::Result<()> {
             dev.reboot_system().context("It is safe to restart the device manually")
         },
         Err(e) if is_connection_aborted(&e) => {
-            bail!("{}", e.context("Device disconnected! Check the USB connection and try again"))
+            bail!("{}", e.context("Device disconnected! Check the USB connection and try again."))
         },
         Err(e) => {
             dev.exit_flash_mode()?;
@@ -133,17 +136,16 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn check_usb_speed(dev: &FastbootDevice) {
-    if let Some(speed) = dev.speed() && speed < Speed::Super {
-        let data_rate = match speed {
-            Speed::Low => "1.5 Mbps",
-            Speed::Full => "12 Mbps",
-            Speed::High => "480 Mbps",
-            Speed::Super => "5 Gbps",
-            Speed::SuperPlus => "10 Gbps",
-            _ => "unknown"
-        };
-        // seems like all phones (that we support) are at least USB 3.0
-        warn!("Device is connected at {data_rate}, which is slower than the device supports. Consider switching to at least a USB 3.0 connection to improve flashing speeds.");
+    if let Some(speed) = dev.speed() {
+        let data_rate = speed_as_data_rate(speed);
+        if speed >= Speed::Super {
+            println!("Device connected at {data_rate} ({speed:?}).");
+        } else {
+            // seems like all phones (that we support) are at least USB 3.0
+            println!("Device connected at {data_rate} ({speed:?}), which is slower than the device supports. Consider switching to at least a USB 3.0 ({:?}) connection to improve flashing speeds.", Speed::Super);
+        }
+    } else {
+        warn!("Device is connected, however its USB connection speed can not be read!");
     }
 }
 
