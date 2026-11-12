@@ -201,6 +201,10 @@ impl ProgressBar {
         Ok(value)
     }
 
+    pub fn suspend<F: FnOnce() -> R, R>(&self, f: F) -> R {
+        self.bar.suspend(f)
+    }
+
     fn set_finished_style(&mut self) {
         self.bar.set_style(self.bar.style().template(" {msg} {prefix:<40} {elapsed:>3.yellow}").unwrap());
     }

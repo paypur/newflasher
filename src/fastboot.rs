@@ -67,10 +67,9 @@ impl FastbootDevice {
             .wait()?
             .find(|d| d.vendor_id() == VID && d.product_id() == PID)
             .context("Failed to find device! Device should be connected via flash mode (green *), not fastboot!")?;
-
-        info!("USB device connected at {:?} speed", info.speed());
+        
         let device: Device = info.open().wait().with_context(|| format!("Failed to open device (VID: {VID}, PID: {PID})"))?;
-        let _interface: Interface = device.claim_interface(0).wait()?;
+        let _interface: Interface = device.claim_interface(0).wait().context("On Windows you may need to install WinUSB as the driver for this device")?;
 
         let reader = _interface.endpoint::<Bulk, In>(IN)?.reader(256).with_num_transfers(1).with_read_timeout(TEN_SEC);
         let writer = _interface.endpoint::<Bulk, Out>(OUT)?.writer(0x20000).with_num_transfers(4).with_write_timeout(TEN_SEC);

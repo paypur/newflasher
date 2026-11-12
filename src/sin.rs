@@ -61,8 +61,7 @@ impl Sin {
         let is_partition_image = self.prefix.starts_with("partitionimage_");
 
         let has_slot = !is_partition_image && {
-            let cmd = format!("getvar:has-slot:{prefix}");
-            match usb.command(cmd.as_str()) {
+            match usb.command(format!("getvar:has-slot:{prefix}")) {
                 Ok(res) => res.data == b"yes",
                 Err(e) => {
                     error!("{e}");
@@ -92,7 +91,8 @@ impl Sin {
         })?;
 
         for (i, chunk) in self.chunks.iter().enumerate() {
-            info!("Downloading sparse chunk {prefix}.{i}");
+            progress.suspend(|| info!("Downloading sparse chunk {prefix}.{i}"));
+
             usb.download(chunk).with_context(|| format!("Failed to transfer {prefix}, chunk {i} of {parts}"))?;
 
             if is_partition_image {
@@ -104,7 +104,7 @@ impl Sin {
                     (true, false) => format!("flash:{prefix}_{target_slot}"),
                     (true, true) => format!("flash:{prefix}_{}", target_slot.other()),
                 };
-                usb.command_expect_header(flash_cmd, Header::Okay)?;
+                usb.command_expect_header(flash_cmd, Header::Okay).with_context(|| format!("Failed to flash {prefix}, chunk {i} of {parts}"))?;
             }
 
             progress.inc();
