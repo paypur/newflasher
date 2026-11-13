@@ -408,23 +408,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nfrs"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "console",
- "derive_more",
- "env_logger",
- "flate2",
- "indicatif",
- "log",
- "nusb",
- "regex",
- "tar",
- "xml",
-]
-
-[[package]]
 name = "nusb"
 version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -796,6 +779,23 @@ name = "xml"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2f45bb2c13fec6a6cb4c0f76a7e94839e110a14ec803ec2940777a94c347bc52"
+
+[[package]]
+name = "xpf"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "console",
+ "derive_more",
+ "env_logger",
+ "flate2",
+ "indicatif",
+ "log",
+ "nusb",
+ "regex",
+ "tar",
+ "xml",
+]
 
 [[package]]
 name = "zlib-rs"
