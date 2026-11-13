@@ -2,6 +2,7 @@ newflasher
 
 .idea/
 target/
+tests/data/*_Customized_*
 
 perf.*
 *.txt

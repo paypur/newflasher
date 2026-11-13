@@ -156,13 +156,13 @@ impl Sin {
     }
 }
 
-pub fn parse_all_cwd() -> anyhow::Result<Vec<Sin>> {
-    let sins = parse_all(fs::read_dir("./")?.filter_map(is_sin_file))?;
+pub fn parse_dir(dir: impl AsRef<Path>) -> anyhow::Result<Vec<Sin>> {
+    let sins = parse_paths(fs::read_dir(dir)?.filter_map(is_sin_file))?;
     info!("Found {} .sin files", sins.len());
     Ok(sins)
 }
 
-pub fn parse_all(paths: impl IntoIterator<Item = PathBuf>) -> anyhow::Result<Vec<Sin>> {
+pub fn parse_paths(paths: impl IntoIterator<Item = PathBuf>) -> anyhow::Result<Vec<Sin>> {
     paths.into_iter()
         .filter(|p| {
             if noerase_in_updatexml(p.file_name().unwrap()) || p.file_name().unwrap().to_string_lossy().contains("persist") {
@@ -201,5 +201,19 @@ fn filter_entry(entry: &Entry<Box<dyn Read>>) -> bool {
             debug!("Ignoring {:?}", et);
             false
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::sin;
+
+    #[test]
+    fn test_parsing() {
+        assert!(sin::parse_dir("tests/data/H8314_Customized_US_52.1.A.3.137-R7C").is_ok());
+        assert!(sin::parse_dir("tests/data/XQ-CQ72_Customized_HK_64.2.A.2.272").is_ok());
+        assert!(sin::parse_dir("tests/data/XQ-EC72_Customized_HK_69.2.A.4.110").is_ok());
+        assert!(sin::parse_dir("tests/data/XQ-GE44_Customized_JP_73.0.A.2.62").is_ok());
+        assert!(sin::parse_dir("tests/data/XQ-GH44_Customized_JP_74.1.A.2.42").is_ok());
     }
 }

@@ -113,8 +113,8 @@ impl TrimArea {
     }
 }
 
-pub fn parse_all_cwd() -> anyhow::Result<Vec<TrimArea>> {
-    let tas = fs::read_dir("./").unwrap()
+pub fn parse_dir(dir: impl AsRef<Path>) -> anyhow::Result<Vec<TrimArea>> {
+    let tas = fs::read_dir(dir).unwrap()
         .filter_map(is_ta_file)
         .filter(|path| if !noerase_in_updatexml(path.file_name().unwrap()) {
             true
@@ -171,7 +171,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_ta_files() {
+    fn ta_contents() {
         let compare = |file: &str, partition: u8, units: Vec<BootConfigUnit>| {
             let result = TrimArea::parse(PathBuf::from(file)).expect(file);
             assert_eq!(result.partition, partition);
@@ -181,19 +181,19 @@ mod tests {
         // unsafe { std::env::set_var("RUST_LOG", "nfrs=debug"); }
         // env_logger::init();
 
-        compare("/media/secondary/xperia/XQ-EC72_Customized_HK_69.2.A.4.90/auto-boot.ta", 2, vec![BootConfigUnit { unit: 0x907, data: vec![0] }]);
-        compare("/media/secondary/xperia/XQ-EC72_Customized_HK_69.2.A.4.90/CustomerID_S20000480_001_HK_c001526.ta", 2, vec![BootConfigUnit { unit: 0x87B, data: vec![0x63, 0x30, 0x30, 0x31, 0x35, 0x32, 0x36] }]);
-        compare("/media/secondary/xperia/XQ-EC72_Customized_HK_69.2.A.4.90/osv-restriction.ta", 2, vec![BootConfigUnit { unit: 0x91A, data: vec![0x0] }]);
-        compare("/media/secondary/xperia/XQ-EC72_Customized_HK_69.2.A.4.90/reset-kernel-cmd-debug.ta", 2, vec![BootConfigUnit { unit: 0x9A9, data: vec![0x0] }]);
-        compare("/media/secondary/xperia/XQ-EC72_Customized_HK_69.2.A.4.90/reset-retail-demo-active-sts.ta", 2, vec![]);
+        compare("tests/data/XQ-EC72_Customized_HK_69.2.A.4.110/auto-boot.ta", 2, vec![BootConfigUnit { unit: 0x907, data: vec![0] }]);
+        compare("tests/data/XQ-EC72_Customized_HK_69.2.A.4.110/CustomerID_S20000480_001_HK_c001526.ta", 2, vec![BootConfigUnit { unit: 0x87B, data: vec![0x63, 0x30, 0x30, 0x31, 0x35, 0x32, 0x36] }]);
+        compare("tests/data/XQ-EC72_Customized_HK_69.2.A.4.110/osv-restriction.ta", 2, vec![BootConfigUnit { unit: 0x91A, data: vec![0x0] }]);
+        compare("tests/data/XQ-EC72_Customized_HK_69.2.A.4.110/reset-kernel-cmd-debug.ta", 2, vec![BootConfigUnit { unit: 0x9A9, data: vec![0x0] }]);
+        compare("tests/data/XQ-EC72_Customized_HK_69.2.A.4.110/reset-retail-demo-active-sts.ta", 2, vec![]);
 
-        compare("/media/secondary/xperia/H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/auto-boot.ta", 2, vec![BootConfigUnit { unit: 0x90C, data: vec![0x0] }]);
-        compare("/media/secondary/xperia/H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/cust-reset.ta", 2, vec![BootConfigUnit { unit: 0x8A4, data: vec![0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0] }]);
-        compare("/media/secondary/xperia/H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/master-reset.ta", 2, vec![BootConfigUnit { unit: 0x9F6, data: vec![0x1] }]);
-        compare("/media/secondary/xperia/H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/osv-restriction.ta", 2, vec![BootConfigUnit { unit: 0x91A, data: vec![0x0] }]);
-        compare("/media/secondary/xperia/H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/reset-kernel-cmd-debug.ta", 2, vec![BootConfigUnit { unit: 0x9A9, data: vec![0x0] }]);
-        compare("/media/secondary/xperia/H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/reset-non-secure-adb.ta", 2, vec![]);
-        compare("/media/secondary/xperia/H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/reset-wipe-reason.ta", 2, vec![]);
-        compare("/media/secondary/xperia/H8314_O2_Pay_monthly_UK_52.1.A.3.49-R6C/simlock.ta", 2, vec![]);
+        compare("tests/data/H8314_Customized_US_52.1.A.3.137-R7C/auto-boot.ta", 2, vec![BootConfigUnit { unit: 0x90C, data: vec![0x0] }]);
+        compare("tests/data/H8314_Customized_US_52.1.A.3.137-R7C/cust-reset.ta", 2, vec![BootConfigUnit { unit: 0x8A4, data: vec![0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0] }]);
+        compare("tests/data/H8314_Customized_US_52.1.A.3.137-R7C/master-reset.ta", 2, vec![BootConfigUnit { unit: 0x9F6, data: vec![0x1] }]);
+        compare("tests/data/H8314_Customized_US_52.1.A.3.137-R7C/osv-restriction.ta", 2, vec![BootConfigUnit { unit: 0x91A, data: vec![0x0] }]);
+        compare("tests/data/H8314_Customized_US_52.1.A.3.137-R7C/reset-kernel-cmd-debug.ta", 2, vec![BootConfigUnit { unit: 0x9A9, data: vec![0x0] }]);
+        compare("tests/data/H8314_Customized_US_52.1.A.3.137-R7C/reset-non-secure-adb.ta", 2, vec![]);
+        compare("tests/data/H8314_Customized_US_52.1.A.3.137-R7C/reset-wipe-reason.ta", 2, vec![]);
+        compare("tests/data/H8314_Customized_US_52.1.A.3.137-R7C/simlock.ta", 2, vec![]);
     }
 }

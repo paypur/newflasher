@@ -11,20 +11,12 @@ mod tests {
     use std::sync::{Mutex, OnceLock};
     use tar::Archive;
     use crate::sin::Sin;
-
-    #[repr(C)]
-    #[derive(PartialEq, Debug)]
-    struct TA {
-        partition: u8,
-        unit: usize,
-        data: *const u8,
-        size: usize
-    }
+    use crate::utils::is_sin_file;
 
     static DEVICE: OnceLock<Mutex<FastbootDevice>> = OnceLock::new();
 
     fn get_device() -> &'static Mutex<FastbootDevice> {
-        DEVICE.get_or_init(|| Mutex::new(FastbootDevice::open()))
+        DEVICE.get_or_init(|| Mutex::new(FastbootDevice::open().expect("Failed to open fastboot device")))
     }
 
     fn test_in_dir(dir: impl AsRef<Path>, f: impl Fn()) {
@@ -38,83 +30,45 @@ mod tests {
         std::env::set_current_dir(cwd).unwrap();
     }
 
-    fn parse_files(lun_size: Option<u64>) {
-        let _tas = ta::parse_all_cwd().unwrap();
-        let _sins = sin::parse_all_cwd().unwrap();
-        let _boot = xml::boot_delivery(None).unwrap();
-        let _partition = xml::partition_delivery(lun_size).unwrap();
-    }
-
     #[test]
-    fn parse_files_xqge44() { // 1 VIII
-        env::set_current_dir("/media/secondary/xperia/XQ-GE44_Customized_JP_73.0.A.2.62").unwrap();
-        parse_files(None);
+    fn recover_com() {
+        env::set_current_dir("/media/secondary/xperia/H8314_Customized_US_52.1.A.3.137-R7C").unwrap();
+        // env::set_current_dir("/media/secondary/xperia/XQ-EC72_Customized_HK_69.2.A.4.110").unwrap();
+
+        let to_mib = |n: usize| -> usize { n / 1024 / 1024 };
+
+        let mut dev = get_device().lock().unwrap();
+
+        let paths = fs::read_dir(".").unwrap()
+            .filter_map(is_sin_file)
+            .max_by_key(|p| fs::metadata(p).unwrap().len())
+            .unwrap();
+
+        println!("{:?}", paths);
+
+        let sin = Sin::parse(paths).unwrap();
+
+        println!("Speed: {:?}", dev.speed());
+
+        let mut total = 0;
+        let mut duration = std::time::Duration::new(0, 0);
+
+        for (i, chunk) in sin.chunks().enumerate() {
+            let now = std::time::Instant::now();
+            dev.download(chunk).unwrap();
+            let elapsed = now.elapsed();
+
+            total += chunk.len();
+            duration += elapsed;
+
+            println!("Downloaded chunk {i}, {} MiB in {:3.3}s. {:3.0}MiB/s", to_mib(chunk.len()), elapsed.as_secs_f64(), to_mib(chunk.len()) as f64 / elapsed.as_secs_f64());
+        }
+
+        // xc2c usb2.1 43 MiB/s
+        // xc2c usb3 265 MiB/s
+        // 1VI usb3 414 MiB/s
+        println!("Downloaded {} MiB in {:3.3}s. Average of {:3.0}MiB/s", to_mib(total), duration.as_secs_f64(), to_mib(total) as f64 / duration.as_secs_f64());
     }
-
-    #[test]
-    fn parse_files_xqgh44() { // 1 VIII
-        env::set_current_dir("/media/server/hjc/XQ-GH44_Customized_JP_74.1.A.2.42").unwrap();
-        parse_files(None);
-    }
-
-    #[test]
-    fn parse_files_xqec72() { // 1 VI
-        env_logger::init();
-        env::set_current_dir("/media/secondary/xperia/XQ-EC72_Customized_HK_69.2.A.4.110").unwrap();
-        parse_files(Some(249896960));
-    }
-
-    #[test]
-    fn parse_files_xqcq72() { // 5 IV
-        env::set_current_dir("/media/secondary/xperia/XQ-CQ72_Customized_HK_64.2.A.2.272").unwrap();
-        parse_files(None);
-    }
-
-    #[test]
-    fn parse_files_j8170() { // 1
-        env::set_current_dir("/media/secondary/xperia/J8170_Customized_US_55.2.E.0.165-R7C").unwrap();
-        parse_files(None);
-    }
-
-    #[test]
-    fn test_xml() {
-        env_logger::builder()
-            .format_timestamp(None)
-            .init();
-
-        test_in_dir("tests/data/H8314_Customized_US_52.1.A.3.137-R7C/", || {
-            let boot = xml_parser::boot_delivery("C8D92A2DBA1482588EFF712963329500AC7155CEA8494FDD4B7B180F2F871801").unwrap();
-            assert_eq!(boot._space_id, String::from("1310-7079"));
-            assert_eq!(boot._name, String::from("COMMERCIAL_0008B0E1"));
-            assert!(boot.plf_root_hash.starts_with("C8D92A2DBA1482588EFF712963329500AC7155CEA8494FDD"));
-            assert_eq!(boot.hw_config_rev, String::from("HWC_Tama_Com_001"));
-            assert_eq!(boot.boot_config, String::from("Apollo_XBootConfig_MiscTA.ta"));
-            assert_eq!(boot.boot_images, vec![String::from("bootloader_X_BOOT_SDM845_LA2_0_1_Q_208_X-FLASH-ALL-B6B5.sin")]);
-        });
-
-        test_in_dir("tests/data/XQ-EC72_Customized_HK_69.2.A.4.110/", || {
-            let boot = xml_parser::boot_delivery(std::env::var("ROOT_KEY_HASH").unwrap().as_str()).unwrap();
-            assert_eq!(boot._space_id, String::from("8650-0001"));
-            assert_eq!(boot._name, String::from("COMMERCIAL_002270E1"));
-            assert!(boot.plf_root_hash.starts_with("2B9EB2535D4A1179B294D4D083F68D9D3DDC95164111B84157D8BE0169E35DE5C6F79EA6E1034FE3D7A684F3C5166250"));
-            assert_eq!(boot.hw_config_rev, String::from("HWC_XGeneric_001"));
-            assert_eq!(boot.boot_config, String::from("PDX245_XBootConfig_MiscTA.ta"));
-            assert_eq!(boot.boot_images, vec![String::from("bootloader_X_BOOT_SM8650_LA1_0_U_37_X-FLASH-ALL-88DF.sin")]);
-        });
-
-        // test_in_dir("tests/data/XQ-GE74_Customized_HK_73.1.A.2.61/", || {
-        //     let boot = boot_delivery("2008B0E1", "C8D92A2DBA1482588EFF712963329500AC7155CEA8494FDD4B7B180F2F871801").unwrap();
-        //     assert_eq!(boot.space_id, String::from("8850-0001"));
-        //     assert_eq!(boot.config._name, String::from("COMMERCIAL_002B30E1"));
-        //     assert_eq!(boot.config.platform_id, None);
-        //     assert_eq!(boot.config.plf_root_hash, String::from("D3090E374B6A20700E326BE82BB24BF04A492459DC8FD6BF24C6E5F8DD60A0F84221BE752E8F4BC0802F578E16B84E90"));
-        //     assert_eq!(boot.config.hw_config_rev, String::from("HWC_XGeneric_001"));
-        //     assert_eq!(boot.config.boot_config, String::from("PDX267_XBootConfig_MiscTA.ta"));
-        //     assert_eq!(boot.config.boot_images, vec![String::from("bootloader_X_BOOT_SM8850_LA1_0_A16_22_X-FLASH-ALL-DCBF.sin")]);
-        // });
-
-    }
-
 
 /*    // https://android.googlesource.com/platform/system/core/+/master/fastboot/README.md
     // #[test]

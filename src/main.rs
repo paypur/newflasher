@@ -90,8 +90,8 @@ fn main() -> anyhow::Result<()> {
 
     /* parse relevant files first */
     let mut bar = ProgressBar::new(4, "Parsing firmware files");
-    let sins = bar.step(|| sin::parse_all_cwd())?;
-    let tas = bar.step(|| ta::parse_all_cwd())?;
+    let sins = bar.step(|| sin::parse_dir("./"))?;
+    let tas = bar.step(|| ta::parse_dir("./"))?;
     let boot = bar.step(|| xml::boot_delivery(Some(&root_key_hash)))?;
     let partition = bar.step(|| xml::partition_delivery(Some(lun_size)))?;
     bar.okay();

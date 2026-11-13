@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, ensure};
+use anyhow::{anyhow, Context, ensure, bail};
 use regex::{Regex};
 use std::fs::File;
 use std::io::BufReader;
@@ -34,7 +34,7 @@ struct BootConfigurationBuilder {
     platform_id: Option<String>,
     plf_root_hash: Option<String>,
     hw_config_rev: Option<String>,
-    boot_config: Option<String>,
+    boot_config: Option<PathBuf>,
     boot_images: Vec<PathBuf>,
 }
 
@@ -46,8 +46,8 @@ impl BootConfigurationBuilder {
             _platform_id: self.platform_id,
             plf_root_hash: self.plf_root_hash.ok_or_else(|| anyhow!("Missing plf_root_hash"))?,
             hw_config_rev: self.hw_config_rev.ok_or_else(|| anyhow!("Missing hw_config_rev"))?,
-            boot_config: TrimArea::parse(PathBuf::from("boot").join(self.boot_config.ok_or_else(|| anyhow!("Missing boot_config"))?))?,
-            boot_images: sin::parse_all(self.boot_images)?,
+            boot_config: TrimArea::parse(self.boot_config.ok_or_else(|| anyhow!("Missing boot_config"))?)?,
+            boot_images: sin::parse_paths(self.boot_images)?,
         })
     }
 }
@@ -68,7 +68,11 @@ const REVISION_ATTRIBUTE: &str = "REVISION";
 const PATH_ATTRIBUTE: &str = "PATH";
 
 pub fn boot_delivery(root_key_hash: Option<&str>) -> anyhow::Result<BootConfiguration> {
-    let boot_delivery_file = File::open("boot/boot_delivery.xml").context("Failed to open boot_delivery.xml")?;
+    boot_delivery_in_dir(std::env::current_dir()?, root_key_hash)
+}
+
+pub fn boot_delivery_in_dir(dir: impl AsRef<Path>, root_key_hash: Option<&str>) -> anyhow::Result<BootConfiguration> {
+    let boot_delivery_file = File::open(dir.as_ref().join("boot/boot_delivery.xml")).context("Failed to open boot_delivery.xml")?;
     let reader = ParserConfig::default().create_reader(BufReader::new(boot_delivery_file));
 
     let mut element_stack = Vec::<String>::new();
@@ -115,7 +119,7 @@ pub fn boot_delivery(root_key_hash: Option<&str>) -> anyhow::Result<BootConfigur
                                     config.plf_root_hash = Some(str.to_owned());
                                 }
                             } else {
-                                return Err(anyhow!("Failed to match value attribute regex"));
+                                bail!("Failed to match value attribute regex");
                             }
                         }
                     }
@@ -125,13 +129,15 @@ pub fn boot_delivery(root_key_hash: Option<&str>) -> anyhow::Result<BootConfigur
                     }
 
                     if element_stack.last().is_some_and(|e| e == BOOT_CONFIG_ELEMENT) {
-                        config.boot_config = config.boot_config.or_else(|| attribute_value(&attrs, PATH_ATTRIBUTE));
+                        if config.boot_config.is_none() && let Some(path) = attribute_value(&attrs, PATH_ATTRIBUTE) {
+                            config.boot_config = Some(dir.as_ref().join("boot").join(path))
+                        }
                     }
 
                     if element_stack.last().is_some_and(|e| e == BOOT_IMAGES_ELEMENT) {
                         if name.local_name == FILE_ELEMENT {
                             if let Some(path) = attribute_value(&attrs, PATH_ATTRIBUTE) {
-                                config.boot_images.push(Path::new("./boot").join(path));
+                                config.boot_images.push(dir.as_ref().join("boot").join(path));
                             }
                         }
                     }
@@ -168,7 +174,11 @@ pub fn boot_delivery(root_key_hash: Option<&str>) -> anyhow::Result<BootConfigur
 }
 
 pub fn partition_delivery(lun_size: Option<u64>) -> anyhow::Result<Vec<Sin>> {
-    let partition_delivery_file = File::open("partition/partition_delivery.xml").context("Failed to open partition_delivery.xml")?;
+    partition_delivery_in_dir(std::env::current_dir()?, lun_size)
+}
+
+pub fn partition_delivery_in_dir(dir: impl AsRef<Path>, lun_size: Option<u64>) -> anyhow::Result<Vec<Sin>> {
+    let partition_delivery_file = File::open(dir.as_ref().join("partition/partition_delivery.xml")).context("Failed to open partition_delivery.xml")?;
     let reader = ParserConfig::default().create_reader(BufReader::new(partition_delivery_file));
 
     let regex = Regex::new(r"partition-image-LUN0_(\d{8,10})_X-FLASH-ALL-[0-9A-F]{4}")?;
@@ -201,7 +211,7 @@ pub fn partition_delivery(lun_size: Option<u64>) -> anyhow::Result<Vec<Sin>> {
                         if skip {
                             info!("Skipping {path}");
                         } else {
-                            partition_paths.push(Path::new("partition/").join(&path));
+                            partition_paths.push(dir.as_ref().join("partition").join(&path));
                         }
                     }
                 }
@@ -215,9 +225,8 @@ pub fn partition_delivery(lun_size: Option<u64>) -> anyhow::Result<Vec<Sin>> {
         }
     }
 
-    let sins = sin::parse_all(partition_paths)?;
-    info!("Found {} partition files", sins.len());
-    Ok(sins)
+    sin::parse_paths(partition_paths)
+        .map(|sins| { info!("Found {} partition files", sins.len()); sins })
 }
 
 fn pop_element(element_stack: &mut Vec<String>, ended_name: &str) -> anyhow::Result<()> {
@@ -237,4 +246,34 @@ fn attribute_value(attributes: &[OwnedAttribute], name: &str) -> Option<String> 
     attributes.iter()
         .find(|attribute| attribute.name.local_name == name)
         .map(|attribute| attribute.value.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::xml;
+
+    #[test]
+    fn boot() {
+        xml::boot_delivery_in_dir("tests/data/H8314_Customized_US_52.1.A.3.137-R7C", None).unwrap();
+        xml::boot_delivery_in_dir("tests/data/XQ-CQ72_Customized_HK_64.2.A.2.272", None).unwrap();
+        let _1vi = xml::boot_delivery_in_dir("tests/data/XQ-EC72_Customized_HK_69.2.A.4.110", None).unwrap();
+        xml::boot_delivery_in_dir("tests/data/XQ-GE44_Customized_JP_73.0.A.2.62", None).unwrap();
+        xml::boot_delivery_in_dir("tests/data/XQ-GH44_Customized_JP_74.1.A.2.42", None).unwrap();
+
+        assert_eq!(_1vi._space_id, "8650-0001");
+        assert_eq!(_1vi._name, "COMMERCIAL_002270E1");
+        assert!(_1vi.plf_root_hash.starts_with("2B9EB2535D4A1179B294D4D083F68D9D3DDC95164111B84157D8BE0169E35DE5C6F79EA6E1034FE3D7A684F3C5166250"));
+        assert_eq!(_1vi.hw_config_rev, "HWC_XGeneric_001");
+        assert_eq!(_1vi.boot_config.name, "PDX245_XBootConfig_MiscTA");
+        assert_eq!(_1vi.boot_images.iter().map(|sin| sin.prefix.as_str()).collect::<Vec<&str>>(), vec!["bootloader"]);
+    }
+
+    #[test]
+    fn partition() {
+        xml::partition_delivery_in_dir("tests/data/H8314_Customized_US_52.1.A.3.137-R7C", None).unwrap();
+        xml::partition_delivery_in_dir("tests/data/XQ-CQ72_Customized_HK_64.2.A.2.272", None).unwrap();
+        xml::partition_delivery_in_dir("tests/data/XQ-EC72_Customized_HK_69.2.A.4.110", Some(249896960)).unwrap();
+        xml::partition_delivery_in_dir("tests/data/XQ-GE44_Customized_JP_73.0.A.2.62", None).unwrap();
+        xml::partition_delivery_in_dir("tests/data/XQ-GH44_Customized_JP_74.1.A.2.42", None).unwrap();
+    }
 }
